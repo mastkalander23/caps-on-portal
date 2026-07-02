@@ -47,5 +47,8 @@ export const api = {
   addTrade: (payload) => request("/admin/trades", { method: "POST", body: JSON.stringify(payload) }),
   bulkImportTrades: (rows) => request("/admin/trades/bulk", { method: "POST", body: JSON.stringify({ rows }) }),
   closeTrade: (id, payload) => request(`/admin/trades/${id}/close`, { method: "PATCH", body: JSON.stringify(payload) }),
+  listTrades: (userId) => request(`/admin/trades?userId=${userId}`),
+  updateTrade: (id, payload) => request(`/admin/trades/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteTrade: (id) => request(`/admin/trades/${id}`, { method: "DELETE" }),
   setTickerMap: (script, yahooSymbol) => request("/admin/ticker-map", { method: "POST", body: JSON.stringify({ script, yahooSymbol }) }),
 };

@@ -1,6 +1,6 @@
 import React, { useState, useRef } from "react";
 import * as XLSX from "xlsx";
-import { UserPlus, TrendingUp, Upload, CheckCircle2, AlertCircle, Link2 } from "lucide-react";
+import { UserPlus, TrendingUp, Upload, CheckCircle2, AlertCircle, Link2, Pencil, Trash2 } from "lucide-react";
 import { T, fmtINR } from "../theme.js";
 import { Dropdown } from "../components/ui.jsx";
 import { api } from "../api.js";
@@ -45,6 +45,7 @@ export default function AdminPanel({ investorsList, onChanged }) {
     <div style={{ padding: "26px 28px", maxWidth: 900, margin: "0 auto" }}>
       <AddInvestor onChanged={onChanged} />
       <AddTrade investorsList={investorsList} onChanged={onChanged} />
+      <EditTrades investorsList={investorsList} onChanged={onChanged} />
       <ImportExcel investorsList={investorsList} onChanged={onChanged} />
       <TickerMap onChanged={onChanged} />
     </div>
@@ -141,6 +142,151 @@ function AddTrade({ investorsList, onChanged }) {
           <button type="submit" disabled={!form.userId} style={{ background: T.gold, border: "none", borderRadius: 8, padding: "10px 18px", color: "#20180a", fontWeight: 600, fontSize: 13, cursor: form.userId ? "pointer" : "not-allowed", opacity: form.userId ? 1 : 0.5 }}>Add trade</button>
         </div>
       </form>
+      {status && <Banner tone={status.tone}>{status.msg}</Banner>}
+    </Section>
+  );
+}
+
+/* ---------------- Edit / Manage Trades ---------------- */
+function EditTrades({ investorsList, onChanged }) {
+  const [userId, setUserId] = useState("");
+  const [trades, setTrades] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [draft, setDraft] = useState(null);
+  const [status, setStatus] = useState(null);
+
+  async function loadTrades(uid) {
+    if (!uid) { setTrades([]); return; }
+    setLoading(true);
+    setStatus(null);
+    try {
+      const rows = await api.listTrades(uid);
+      setTrades(rows);
+    } catch (err) {
+      setStatus({ tone: "err", msg: err.message });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function onPickInvestor(v) {
+    setUserId(v);
+    setEditingId(null);
+    loadTrades(v);
+  }
+
+  function startEdit(t) {
+    setEditingId(t.id);
+    setDraft({
+      script: t.script,
+      buyDate: t.buy_date || "",
+      qty: t.qty,
+      buyPrice: t.buy_price,
+      sellDate: t.sell_date || "",
+      sellPrice: t.sell_price ?? "",
+    });
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setDraft(null);
+  }
+
+  async function saveEdit(id) {
+    setStatus(null);
+    try {
+      await api.updateTrade(id, {
+        script: draft.script,
+        buyDate: draft.buyDate || null,
+        qty: Number(draft.qty),
+        buyPrice: Number(draft.buyPrice),
+        sellDate: draft.sellDate || null,
+        sellPrice: draft.sellPrice === "" ? null : Number(draft.sellPrice),
+      });
+      setStatus({ tone: "ok", msg: "Trade updated." });
+      cancelEdit();
+      loadTrades(userId);
+      onChanged();
+    } catch (err) {
+      setStatus({ tone: "err", msg: err.message });
+    }
+  }
+
+  async function removeTrade(id) {
+    if (!window.confirm("Delete this trade? This can't be undone.")) return;
+    setStatus(null);
+    try {
+      await api.deleteTrade(id);
+      setStatus({ tone: "ok", msg: "Trade deleted." });
+      loadTrades(userId);
+      onChanged();
+    } catch (err) {
+      setStatus({ tone: "err", msg: err.message });
+    }
+  }
+
+  const cellIn = { width: "100%", background: T.ink, border: `1px solid ${T.hairline}`, borderRadius: 5, padding: "5px 7px", color: T.bone, fontSize: 12, fontFamily: "'IBM Plex Mono', monospace" };
+
+  return (
+    <Section icon={Pencil} title="Manage / Edit Trades" subtitle="Correct or remove trades that were already added or imported — pick an investor, then edit any row directly.">
+      <Dropdown label="Investor" value={userId} onChange={onPickInvestor}
+        options={[{ value: "", label: "Select investor…" }, ...investorsList.map((i) => ({ value: i.id, label: i.display_name }))]} />
+
+      {loading && <div style={{ color: T.muted, fontSize: 12.5, marginTop: 14 }}>Loading trades…</div>}
+
+      {!loading && userId && (
+        <div style={{ overflowX: "auto", marginTop: 16, border: `1px solid ${T.hairline}`, borderRadius: 8 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "'IBM Plex Mono', monospace", fontSize: 12 }}>
+            <thead>
+              <tr style={{ color: T.muted, background: T.panel2 }}>
+                {["Script", "Buy Date", "Qty", "Buy Price", "Sell Date", "Sell Price", ""].map((h) => (
+                  <th key={h} style={{ textAlign: "left", padding: "7px 8px", borderBottom: `1px solid ${T.hairline}`, fontWeight: 500, whiteSpace: "nowrap" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {trades.map((t) => {
+                const editing = editingId === t.id;
+                return (
+                  <tr key={t.id} style={{ borderBottom: `1px solid ${T.hairline}` }}>
+                    {editing ? (
+                      <>
+                        <td style={{ padding: 6 }}><input style={cellIn} value={draft.script} onChange={(e) => setDraft({ ...draft, script: e.target.value })} /></td>
+                        <td style={{ padding: 6 }}><input type="date" style={cellIn} value={draft.buyDate} onChange={(e) => setDraft({ ...draft, buyDate: e.target.value })} /></td>
+                        <td style={{ padding: 6 }}><input type="number" step="any" style={cellIn} value={draft.qty} onChange={(e) => setDraft({ ...draft, qty: e.target.value })} /></td>
+                        <td style={{ padding: 6 }}><input type="number" step="any" style={cellIn} value={draft.buyPrice} onChange={(e) => setDraft({ ...draft, buyPrice: e.target.value })} /></td>
+                        <td style={{ padding: 6 }}><input type="date" style={cellIn} value={draft.sellDate} onChange={(e) => setDraft({ ...draft, sellDate: e.target.value })} /></td>
+                        <td style={{ padding: 6 }}><input type="number" step="any" style={cellIn} placeholder="open" value={draft.sellPrice} onChange={(e) => setDraft({ ...draft, sellPrice: e.target.value })} /></td>
+                        <td style={{ padding: 6, whiteSpace: "nowrap" }}>
+                          <button onClick={() => saveEdit(t.id)} style={{ background: T.gold, border: "none", borderRadius: 5, padding: "5px 9px", color: "#20180a", fontWeight: 600, fontSize: 11, cursor: "pointer", marginRight: 6 }}>Save</button>
+                          <button onClick={cancelEdit} style={{ background: "none", border: `1px solid ${T.hairline}`, borderRadius: 5, padding: "5px 9px", color: T.muted, fontSize: 11, cursor: "pointer" }}>Cancel</button>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td style={{ padding: "8px", color: T.bone }}>{t.script}</td>
+                        <td style={{ padding: "8px" }}>{t.buy_date || "—"}</td>
+                        <td style={{ padding: "8px" }}>{t.qty}</td>
+                        <td style={{ padding: "8px" }}>{t.buy_price}</td>
+                        <td style={{ padding: "8px" }}>{t.sell_date || "—"}</td>
+                        <td style={{ padding: "8px" }}>{t.sell_price ?? "open"}</td>
+                        <td style={{ padding: "8px", whiteSpace: "nowrap" }}>
+                          <button onClick={() => startEdit(t)} title="Edit" style={{ background: "none", border: `1px solid ${T.hairline}`, borderRadius: 5, padding: "5px 7px", color: T.boneDim, cursor: "pointer", marginRight: 6 }}><Pencil size={12} /></button>
+                          <button onClick={() => removeTrade(t.id)} title="Delete" style={{ background: "none", border: `1px solid ${T.terracotta}55`, borderRadius: 5, padding: "5px 7px", color: T.terracotta, cursor: "pointer" }}><Trash2 size={12} /></button>
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                );
+              })}
+              {trades.length === 0 && (
+                <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: T.muted }}>No trades for this investor yet.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
       {status && <Banner tone={status.tone}>{status.msg}</Banner>}
     </Section>
   );

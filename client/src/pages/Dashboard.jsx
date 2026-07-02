@@ -145,10 +145,9 @@ export default function Dashboard({ session, onLogout }) {
 
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 26 }}>
           <StatCard label="Current Value" value={fmtINR(summary.currentValue)} sub={`Invested ${fmtINR(summary.invested)}`} />
-          <StatCard label="Realized P&L" value={fmtINR(view === "gross" ? summary.realized : view === "afterTax" ? summary.investorRealizedAfterTax : summary.investorRealized)} tone={summary.realized >= 0 ? "up" : "down"} sub={`Manager cut: ${fmtINR(summary.managerRealized)}`} />
-          <StatCard label="Unrealized P&L" value={fmtINR(view === "gross" ? summary.unrealized : view === "afterTax" ? summary.investorUnrealizedAfterTax : summary.investorUnrealized)} tone={summary.unrealized >= 0 ? "up" : "down"} sub={`Manager cut: ${fmtINR(summary.managerUnrealized)}`} />
+          <StatCard label="Realized P&L" value={fmtINR(summary.realized)} tone={summary.realized >= 0 ? "up" : "down"} sub={`Your share: ${fmtINR(summary.investorRealized)}`} />
+          <StatCard label="Unrealized P&L" value={fmtINR(summary.unrealized)} tone={summary.unrealized >= 0 ? "up" : "down"} sub={`Your share: ${fmtINR(summary.investorUnrealized)}`} />
           <StatCard label="Tax (LTCG 12.5% / STCG 20%)" value={fmtINR(totalTax)} sub="On gains only, by holding period ≥/< 365 days" />
-          <StatCard label="Profit-Share Ratio" value={`${Math.round((1 - investor.ratio) * 100)} / ${Math.round(investor.ratio * 100)}`} sub="Investor / Manager, post profit" />
         </div>
 
         <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginBottom: 26 }}>
