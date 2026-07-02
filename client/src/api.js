@@ -51,4 +51,7 @@ export const api = {
   updateTrade: (id, payload) => request(`/admin/trades/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteTrade: (id) => request(`/admin/trades/${id}`, { method: "DELETE" }),
   setTickerMap: (script, yahooSymbol) => request("/admin/ticker-map", { method: "POST", body: JSON.stringify({ script, yahooSymbol }) }),
+  changePassword: (currentPassword, newPassword) => request("/auth/change-password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword }) }),
+  updateInvestor: (id, payload) => request(`/admin/investors/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  resetInvestorPassword: (id, password) => request(`/admin/investors/${id}/password`, { method: "POST", body: JSON.stringify({ password }) }),
 };

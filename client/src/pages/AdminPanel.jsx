@@ -1,6 +1,6 @@
 import React, { useState, useRef } from "react";
 import * as XLSX from "xlsx";
-import { UserPlus, TrendingUp, Upload, CheckCircle2, AlertCircle, Link2, Pencil, Trash2 } from "lucide-react";
+import { UserPlus, TrendingUp, Upload, CheckCircle2, AlertCircle, Link2, Pencil, Trash2, Users, KeyRound } from "lucide-react";
 import { T, fmtINR } from "../theme.js";
 import { Dropdown } from "../components/ui.jsx";
 import { api } from "../api.js";
@@ -44,6 +44,7 @@ export default function AdminPanel({ investorsList, onChanged }) {
   return (
     <div style={{ padding: "26px 28px", maxWidth: 900, margin: "0 auto" }}>
       <AddInvestor onChanged={onChanged} />
+      <EditInvestors investorsList={investorsList} onChanged={onChanged} />
       <AddTrade investorsList={investorsList} onChanged={onChanged} />
       <EditTrades investorsList={investorsList} onChanged={onChanged} />
       <ImportExcel investorsList={investorsList} onChanged={onChanged} />
@@ -85,6 +86,110 @@ function AddInvestor({ onChanged }) {
           <button type="submit" style={{ background: T.gold, border: "none", borderRadius: 8, padding: "10px 18px", color: "#20180a", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>Add investor</button>
         </div>
       </form>
+      {status && <Banner tone={status.tone}>{status.msg}</Banner>}
+    </Section>
+  );
+}
+
+/* ---------------- Edit Investors ---------------- */
+function EditInvestors({ investorsList, onChanged }) {
+  const [editingId, setEditingId] = useState(null);
+  const [draft, setDraft] = useState(null);
+  const [pwId, setPwId] = useState(null);
+  const [pwValue, setPwValue] = useState("");
+  const [status, setStatus] = useState(null);
+
+  const cellIn = { width: "100%", background: T.ink, border: `1px solid ${T.hairline}`, borderRadius: 5, padding: "6px 8px", color: T.bone, fontSize: 12.5, fontFamily: "'IBM Plex Mono', monospace" };
+
+  function startEdit(inv) {
+    setEditingId(inv.id);
+    setDraft({ displayName: inv.display_name, username: inv.username, ratioPct: Math.round(inv.ratio * 100) });
+    setPwId(null);
+  }
+  function cancelEdit() { setEditingId(null); setDraft(null); }
+
+  async function saveEdit(id) {
+    setStatus(null);
+    try {
+      await api.updateInvestor(id, { displayName: draft.displayName, username: draft.username, ratio: Number(draft.ratioPct) / 100 });
+      setStatus({ tone: "ok", msg: "Investor details updated." });
+      cancelEdit();
+      onChanged();
+    } catch (err) {
+      setStatus({ tone: "err", msg: err.message });
+    }
+  }
+
+  async function resetPassword(id) {
+    setStatus(null);
+    try {
+      await api.resetInvestorPassword(id, pwValue);
+      setStatus({ tone: "ok", msg: "Password reset. Share the new password with the investor securely." });
+      setPwId(null); setPwValue("");
+    } catch (err) {
+      setStatus({ tone: "err", msg: err.message });
+    }
+  }
+
+  return (
+    <Section icon={Users} title="Edit Investors" subtitle="Correct a name, username, or profit-share ratio — or reset an investor's password.">
+      <div style={{ overflowX: "auto", border: `1px solid ${T.hairline}`, borderRadius: 8 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "'IBM Plex Mono', monospace", fontSize: 12 }}>
+          <thead>
+            <tr style={{ color: T.muted, background: T.panel2 }}>
+              {["Name", "Username", "Manager Share %", ""].map((h) => (
+                <th key={h} style={{ textAlign: "left", padding: "7px 8px", borderBottom: `1px solid ${T.hairline}`, fontWeight: 500, whiteSpace: "nowrap" }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {investorsList.map((inv) => {
+              const editing = editingId === inv.id;
+              return (
+                <React.Fragment key={inv.id}>
+                  <tr style={{ borderBottom: `1px solid ${T.hairline}` }}>
+                    {editing ? (
+                      <>
+                        <td style={{ padding: 6 }}><input style={cellIn} value={draft.displayName} onChange={(e) => setDraft({ ...draft, displayName: e.target.value })} /></td>
+                        <td style={{ padding: 6 }}><input style={cellIn} value={draft.username} onChange={(e) => setDraft({ ...draft, username: e.target.value })} /></td>
+                        <td style={{ padding: 6 }}><input type="number" min="0" max="100" style={cellIn} value={draft.ratioPct} onChange={(e) => setDraft({ ...draft, ratioPct: e.target.value })} /></td>
+                        <td style={{ padding: 6, whiteSpace: "nowrap" }}>
+                          <button onClick={() => saveEdit(inv.id)} style={{ background: T.gold, border: "none", borderRadius: 5, padding: "5px 9px", color: "#20180a", fontWeight: 600, fontSize: 11, cursor: "pointer", marginRight: 6 }}>Save</button>
+                          <button onClick={cancelEdit} style={{ background: "none", border: `1px solid ${T.hairline}`, borderRadius: 5, padding: "5px 9px", color: T.muted, fontSize: 11, cursor: "pointer" }}>Cancel</button>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td style={{ padding: "8px", color: T.bone }}>{inv.display_name}</td>
+                        <td style={{ padding: "8px", color: T.boneDim }}>{inv.username}</td>
+                        <td style={{ padding: "8px" }}>{Math.round(inv.ratio * 100)}%</td>
+                        <td style={{ padding: "8px", whiteSpace: "nowrap" }}>
+                          <button onClick={() => startEdit(inv)} title="Edit" style={{ background: "none", border: `1px solid ${T.hairline}`, borderRadius: 5, padding: "5px 7px", color: T.boneDim, cursor: "pointer", marginRight: 6 }}><Pencil size={12} /></button>
+                          <button onClick={() => { setPwId(pwId === inv.id ? null : inv.id); setEditingId(null); }} title="Reset password" style={{ background: "none", border: `1px solid ${T.hairline}`, borderRadius: 5, padding: "5px 7px", color: T.boneDim, cursor: "pointer" }}><KeyRound size={12} /></button>
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                  {pwId === inv.id && (
+                    <tr style={{ borderBottom: `1px solid ${T.hairline}`, background: T.panel2 }}>
+                      <td colSpan={4} style={{ padding: "10px 8px" }}>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 11.5, color: T.muted }}>New password for {inv.display_name}:</span>
+                          <input type="text" style={{ ...cellIn, width: 180 }} value={pwValue} onChange={(e) => setPwValue(e.target.value)} placeholder="min. 6 characters" />
+                          <button onClick={() => resetPassword(inv.id)} disabled={pwValue.length < 6} style={{ background: T.gold, border: "none", borderRadius: 5, padding: "6px 12px", color: "#20180a", fontWeight: 600, fontSize: 11.5, cursor: pwValue.length < 6 ? "not-allowed" : "pointer", opacity: pwValue.length < 6 ? 0.5 : 1 }}>Set password</button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+            {investorsList.length === 0 && (
+              <tr><td colSpan={4} style={{ padding: 18, textAlign: "center", color: T.muted }}>No investors yet — add one above.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
       {status && <Banner tone={status.tone}>{status.msg}</Banner>}
     </Section>
   );
