@@ -1,6 +1,6 @@
 import React, { useState, useRef } from "react";
 import * as XLSX from "xlsx";
-import { UserPlus, TrendingUp, Upload, CheckCircle2, AlertCircle, Link2, Pencil, Trash2, Users, KeyRound } from "lucide-react";
+import { UserPlus, TrendingUp, Upload, CheckCircle2, AlertCircle, Link2, Pencil, Trash2, Users, KeyRound, HandCoins } from "lucide-react";
 import { T, fmtINR } from "../theme.js";
 import { Dropdown } from "../components/ui.jsx";
 import { api } from "../api.js";
@@ -47,6 +47,7 @@ export default function AdminPanel({ investorsList, onChanged }) {
       <EditInvestors investorsList={investorsList} onChanged={onChanged} />
       <AddTrade investorsList={investorsList} onChanged={onChanged} />
       <EditTrades investorsList={investorsList} onChanged={onChanged} />
+      <BalanceSettlement investorsList={investorsList} onChanged={onChanged} />
       <ImportExcel investorsList={investorsList} onChanged={onChanged} />
       <TickerMap onChanged={onChanged} />
     </div>
@@ -55,7 +56,7 @@ export default function AdminPanel({ investorsList, onChanged }) {
 
 /* ---------------- Add Investor ---------------- */
 function AddInvestor({ onChanged }) {
-  const [form, setForm] = useState({ username: "", password: "", displayName: "", ratio: "30" });
+  const [form, setForm] = useState({ username: "", password: "", displayName: "", ratio: "30", taxApplicable: true });
   const [status, setStatus] = useState(null);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
@@ -65,10 +66,10 @@ function AddInvestor({ onChanged }) {
     try {
       await api.addInvestor({
         username: form.username, password: form.password, displayName: form.displayName,
-        ratio: Number(form.ratio) / 100,
+        ratio: Number(form.ratio) / 100, taxApplicable: form.taxApplicable,
       });
       setStatus({ tone: "ok", msg: `${form.displayName} added. They can sign in with username "${form.username.toLowerCase()}".` });
-      setForm({ username: "", password: "", displayName: "", ratio: "30" });
+      setForm({ username: "", password: "", displayName: "", ratio: "30", taxApplicable: true });
       onChanged();
     } catch (err) {
       setStatus({ tone: "err", msg: err.message });
@@ -82,6 +83,12 @@ function AddInvestor({ onChanged }) {
         <Field label="Username" required value={form.username} onChange={set("username")} placeholder="e.g. rohan" />
         <Field label="Temporary password" required type="text" value={form.password} onChange={set("password")} placeholder="They should change this after first login" />
         <Field label="Manager's profit share (%)" required type="number" min="0" max="100" value={form.ratio} onChange={set("ratio")} />
+
+        <label style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: T.boneDim }}>
+          <input type="checkbox" checked={form.taxApplicable} onChange={(e) => setForm({ ...form, taxApplicable: e.target.checked })} />
+          Tax is applicable to this investor
+        </label>
+
         <div style={{ gridColumn: "1 / -1" }}>
           <button type="submit" style={{ background: T.gold, border: "none", borderRadius: 8, padding: "10px 18px", color: "#20180a", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>Add investor</button>
         </div>
@@ -103,7 +110,7 @@ function EditInvestors({ investorsList, onChanged }) {
 
   function startEdit(inv) {
     setEditingId(inv.id);
-    setDraft({ displayName: inv.display_name, username: inv.username, ratioPct: Math.round(inv.ratio * 100) });
+    setDraft({ displayName: inv.display_name, username: inv.username, ratioPct: Math.round(inv.ratio * 100), taxApplicable: inv.taxApplicable !== false });
     setPwId(null);
   }
   function cancelEdit() { setEditingId(null); setDraft(null); }
@@ -111,7 +118,7 @@ function EditInvestors({ investorsList, onChanged }) {
   async function saveEdit(id) {
     setStatus(null);
     try {
-      await api.updateInvestor(id, { displayName: draft.displayName, username: draft.username, ratio: Number(draft.ratioPct) / 100 });
+      await api.updateInvestor(id, { displayName: draft.displayName, username: draft.username, ratio: Number(draft.ratioPct) / 100, taxApplicable: draft.taxApplicable });
       setStatus({ tone: "ok", msg: "Investor details updated." });
       cancelEdit();
       onChanged();
@@ -137,7 +144,7 @@ function EditInvestors({ investorsList, onChanged }) {
         <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "'IBM Plex Mono', monospace", fontSize: 12 }}>
           <thead>
             <tr style={{ color: T.muted, background: T.panel2 }}>
-              {["Name", "Username", "Manager Share %", ""].map((h) => (
+              {["Name", "Username", "Manager Share %", "Tax Applicable", ""].map((h) => (
                 <th key={h} style={{ textAlign: "left", padding: "7px 8px", borderBottom: `1px solid ${T.hairline}`, fontWeight: 500, whiteSpace: "nowrap" }}>{h}</th>
               ))}
             </tr>
@@ -153,6 +160,9 @@ function EditInvestors({ investorsList, onChanged }) {
                         <td style={{ padding: 6 }}><input style={cellIn} value={draft.displayName} onChange={(e) => setDraft({ ...draft, displayName: e.target.value })} /></td>
                         <td style={{ padding: 6 }}><input style={cellIn} value={draft.username} onChange={(e) => setDraft({ ...draft, username: e.target.value })} /></td>
                         <td style={{ padding: 6 }}><input type="number" min="0" max="100" style={cellIn} value={draft.ratioPct} onChange={(e) => setDraft({ ...draft, ratioPct: e.target.value })} /></td>
+                        <td style={{ padding: 6, textAlign: "center" }}>
+                          <input type="checkbox" checked={draft.taxApplicable} onChange={(e) => setDraft({ ...draft, taxApplicable: e.target.checked })} />
+                        </td>
                         <td style={{ padding: 6, whiteSpace: "nowrap" }}>
                           <button onClick={() => saveEdit(inv.id)} style={{ background: T.gold, border: "none", borderRadius: 5, padding: "5px 9px", color: "#20180a", fontWeight: 600, fontSize: 11, cursor: "pointer", marginRight: 6 }}>Save</button>
                           <button onClick={cancelEdit} style={{ background: "none", border: `1px solid ${T.hairline}`, borderRadius: 5, padding: "5px 9px", color: T.muted, fontSize: 11, cursor: "pointer" }}>Cancel</button>
@@ -163,6 +173,7 @@ function EditInvestors({ investorsList, onChanged }) {
                         <td style={{ padding: "8px", color: T.bone }}>{inv.display_name}</td>
                         <td style={{ padding: "8px", color: T.boneDim }}>{inv.username}</td>
                         <td style={{ padding: "8px" }}>{Math.round(inv.ratio * 100)}%</td>
+                        <td style={{ padding: "8px", color: inv.taxApplicable !== false ? T.emerald : T.muted }}>{inv.taxApplicable !== false ? "Yes" : "No"}</td>
                         <td style={{ padding: "8px", whiteSpace: "nowrap" }}>
                           <button onClick={() => startEdit(inv)} title="Edit" style={{ background: "none", border: `1px solid ${T.hairline}`, borderRadius: 5, padding: "5px 7px", color: T.boneDim, cursor: "pointer", marginRight: 6 }}><Pencil size={12} /></button>
                           <button onClick={() => { setPwId(pwId === inv.id ? null : inv.id); setEditingId(null); }} title="Reset password" style={{ background: "none", border: `1px solid ${T.hairline}`, borderRadius: 5, padding: "5px 7px", color: T.boneDim, cursor: "pointer" }}><KeyRound size={12} /></button>
@@ -172,7 +183,7 @@ function EditInvestors({ investorsList, onChanged }) {
                   </tr>
                   {pwId === inv.id && (
                     <tr style={{ borderBottom: `1px solid ${T.hairline}`, background: T.panel2 }}>
-                      <td colSpan={4} style={{ padding: "10px 8px" }}>
+                      <td colSpan={5} style={{ padding: "10px 8px" }}>
                         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                           <span style={{ fontSize: 11.5, color: T.muted }}>New password for {inv.display_name}:</span>
                           <input type="text" style={{ ...cellIn, width: 180 }} value={pwValue} onChange={(e) => setPwValue(e.target.value)} placeholder="min. 6 characters" />
@@ -185,7 +196,7 @@ function EditInvestors({ investorsList, onChanged }) {
               );
             })}
             {investorsList.length === 0 && (
-              <tr><td colSpan={4} style={{ padding: 18, textAlign: "center", color: T.muted }}>No investors yet — add one above.</td></tr>
+              <tr><td colSpan={5} style={{ padding: 18, textAlign: "center", color: T.muted }}>No investors yet — add one above.</td></tr>
             )}
           </tbody>
         </table>
@@ -391,6 +402,112 @@ function EditTrades({ investorsList, onChanged }) {
             </tbody>
           </table>
         </div>
+      )}
+      {status && <Banner tone={status.tone}>{status.msg}</Banner>}
+    </Section>
+  );
+}
+
+/* ---------------- Balance Settlement ---------------- */
+function BalanceSettlement({ investorsList, onChanged }) {
+  const [userId, setUserId] = useState("");
+  const [settlements, setSettlements] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState({ settlementDate: "", amount: "", note: "" });
+  const [status, setStatus] = useState(null);
+
+  const cellIn = { width: "100%", background: T.ink, border: `1px solid ${T.hairline}`, borderRadius: 5, padding: "6px 8px", color: T.bone, fontSize: 12.5, fontFamily: "'IBM Plex Mono', monospace" };
+
+  async function loadFor(id) {
+    setUserId(id);
+    setStatus(null);
+    if (!id) { setSettlements([]); return; }
+    setLoading(true);
+    try {
+      const rows = await api.listSettlements(id);
+      setSettlements(rows);
+    } catch (err) {
+      setStatus({ tone: "err", msg: err.message });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function submit(e) {
+    e.preventDefault();
+    setStatus(null);
+    try {
+      await api.addSettlement({
+        userId: Number(userId), settlementDate: form.settlementDate,
+        amount: form.amount === "" ? null : Number(form.amount), note: form.note || null,
+      });
+      setStatus({ tone: "ok", msg: "Settlement recorded. This investor's dashboard now shows Balance Settlement — Already Settled." });
+      setForm({ settlementDate: "", amount: "", note: "" });
+      loadFor(userId);
+      onChanged();
+    } catch (err) {
+      setStatus({ tone: "err", msg: err.message });
+    }
+  }
+
+  async function remove(id) {
+    setStatus(null);
+    try {
+      await api.deleteSettlement(id);
+      loadFor(userId);
+      onChanged();
+    } catch (err) {
+      setStatus({ tone: "err", msg: err.message });
+    }
+  }
+
+  return (
+    <Section icon={HandCoins} title="Balance Settlement" subtitle="Record when a balance has been settled between you and an investor. Once one is on file, their dashboard swaps the Tax card for a Balance Settlement card.">
+      <div style={{ marginBottom: 16 }}>
+        <Dropdown label="Investor" value={userId} onChange={loadFor}
+          options={[{ value: "", label: "Select investor…" }, ...investorsList.map((i) => ({ value: String(i.id), label: i.display_name }))]} />
+      </div>
+
+      {userId && (
+        <>
+          <form onSubmit={submit} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 12, alignItems: "end", marginBottom: 16 }}>
+            <Field label="Settlement date" required type="date" value={form.settlementDate} onChange={(e) => setForm({ ...form, settlementDate: e.target.value })} />
+            <Field label="Amount (optional)" type="number" step="any" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="e.g. 125000" />
+            <Field label="Note (optional)" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="e.g. Paid via NEFT" />
+            <button type="submit" disabled={!form.settlementDate} style={{ background: T.gold, border: "none", borderRadius: 8, padding: "10px 18px", color: "#20180a", fontWeight: 600, fontSize: 13, cursor: form.settlementDate ? "pointer" : "not-allowed", opacity: form.settlementDate ? 1 : 0.5, height: 37 }}>Record settlement</button>
+          </form>
+
+          {loading ? (
+            <div style={{ color: T.muted, fontSize: 12.5 }}>Loading…</div>
+          ) : (
+            <div style={{ overflowX: "auto", border: `1px solid ${T.hairline}`, borderRadius: 8 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "'IBM Plex Mono', monospace", fontSize: 12 }}>
+                <thead>
+                  <tr style={{ color: T.muted, background: T.panel2 }}>
+                    {["Date", "Amount", "Note", ""].map((h) => (
+                      <th key={h} style={{ textAlign: "left", padding: "7px 8px", borderBottom: `1px solid ${T.hairline}`, fontWeight: 500, whiteSpace: "nowrap" }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {settlements.map((s) => (
+                    <tr key={s.id} style={{ borderBottom: `1px solid ${T.hairline}` }}>
+                      <td style={{ padding: "8px", color: T.bone }}>{s.settlement_date}</td>
+                      <td style={{ padding: "8px", color: T.boneDim }}>{s.amount != null ? fmtINR(s.amount) : "—"}</td>
+                      <td style={{ padding: "8px", color: T.boneDim }}>{s.note || "—"}</td>
+                      <td style={{ padding: "8px" }}>
+                        <button onClick={() => remove(s.id)} title="Delete" style={{ background: "none", border: `1px solid ${T.terracotta}55`, borderRadius: 5, padding: "5px 7px", color: T.terracotta, cursor: "pointer" }}><Trash2 size={12} /></button>
+                      </td>
+                    </tr>
+                  ))}
+                  {settlements.length === 0 && (
+                    <tr><td colSpan={4} style={{ padding: 18, textAlign: "center", color: T.muted }}>No settlements recorded for this investor yet.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
       {status && <Banner tone={status.tone}>{status.msg}</Banner>}
     </Section>

@@ -7,11 +7,11 @@ import { db } from "./db.js";
 
 const hash = (pw) => bcrypt.hashSync(pw, 12);
 
-db.exec("DELETE FROM trades; DELETE FROM users; DELETE FROM ticker_map;");
+db.exec("DELETE FROM trades; DELETE FROM settlements; DELETE FROM users; DELETE FROM ticker_map;");
 
 const insertUser = db.prepare(`
-  INSERT INTO users (username, password_hash, display_name, role, ratio, tax_rate, joined_on)
-  VALUES (@username, @password_hash, @display_name, @role, @ratio, @tax_rate, @joined_on)
+  INSERT INTO users (username, password_hash, display_name, role, ratio, tax_rate, tax_applicable, joined_on)
+  VALUES (@username, @password_hash, @display_name, @role, @ratio, @tax_rate, @tax_applicable, @joined_on)
 `);
 
 const admin = insertUser.run({
@@ -21,6 +21,7 @@ const admin = insertUser.run({
   role: "admin",
   ratio: 0,
   tax_rate: 0,
+  tax_applicable: 1,
   joined_on: "2025-11-01",
 });
 
@@ -40,6 +41,7 @@ for (const inv of investors) {
     role: "investor",
     ratio: inv.ratio,
     tax_rate: 0.1,
+    tax_applicable: 1,
     joined_on: inv.joined_on,
   });
   investorIds[inv.username] = info.lastInsertRowid;

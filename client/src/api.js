@@ -54,4 +54,7 @@ export const api = {
   changePassword: (currentPassword, newPassword) => request("/auth/change-password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword }) }),
   updateInvestor: (id, payload) => request(`/admin/investors/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   resetInvestorPassword: (id, password) => request(`/admin/investors/${id}/password`, { method: "POST", body: JSON.stringify({ password }) }),
+  listSettlements: (userId) => request(`/admin/settlements?userId=${userId}`),
+  addSettlement: (payload) => request("/admin/settlements", { method: "POST", body: JSON.stringify(payload) }),
+  deleteSettlement: (id) => request(`/admin/settlements/${id}`, { method: "DELETE" }),
 };

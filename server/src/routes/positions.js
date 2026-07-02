@@ -6,8 +6,12 @@ import { getCmpForScript } from "../services/priceFeed.js";
 
 const router = Router();
 
+function latestSettlementFor(userId) {
+  return db.prepare("SELECT settlement_date, amount, note FROM settlements WHERE user_id = ? ORDER BY settlement_date DESC, id DESC LIMIT 1").get(userId) || null;
+}
+
 function loadInvestorData(userId) {
-  const user = db.prepare("SELECT id, display_name, ratio FROM users WHERE id = ? AND role = 'investor'").get(userId);
+  const user = db.prepare("SELECT id, display_name, ratio, tax_applicable FROM users WHERE id = ? AND role = 'investor'").get(userId);
   if (!user) return null;
   const trades = db.prepare("SELECT * FROM trades WHERE user_id = ? ORDER BY buy_date").all(userId);
   const rows = trades.map((t) => ({ ...rowFromTrade(t, getCmpForScript(t.script), user.ratio), investorId: user.id, investorName: user.display_name }));
@@ -47,7 +51,9 @@ router.get("/", requireAuth, (req, res) => {
     const scriptData = scriptBreakdown(rows, metric, view);
 
     return res.json({
-      investor: { id: "all", name: "All Investors (combined)", ratio: null },
+      // "All investors" combines different tax/settlement statuses, so the
+      // tax card is shown as normal here rather than trying to merge them.
+      investor: { id: "all", name: "All Investors (combined)", ratio: null, taxApplicable: true, settlement: null },
       rows, summary, scriptData,
     });
   }
@@ -59,7 +65,11 @@ router.get("/", requireAuth, (req, res) => {
   const scriptData = scriptBreakdown(data.rows, metric, view);
 
   res.json({
-    investor: { id: data.user.id, name: data.user.display_name, ratio: data.user.ratio },
+    investor: {
+      id: data.user.id, name: data.user.display_name, ratio: data.user.ratio,
+      taxApplicable: !!data.user.tax_applicable,
+      settlement: latestSettlementFor(data.user.id),
+    },
     rows: data.rows,
     summary,
     scriptData,

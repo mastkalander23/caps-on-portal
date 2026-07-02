@@ -10,35 +10,37 @@ router.use(requireAuth, requireAdmin);
 
 // Quick-glance totals for every investor
 router.get("/investors", (req, res) => {
-  const users = db.prepare("SELECT id, username, display_name, ratio, tax_rate, joined_on FROM users WHERE role = 'investor'").all();
+  const users = db.prepare("SELECT id, username, display_name, ratio, tax_rate, tax_applicable, joined_on FROM users WHERE role = 'investor'").all();
+  const latestSettlement = db.prepare("SELECT settlement_date, amount, note FROM settlements WHERE user_id = ? ORDER BY settlement_date DESC, id DESC LIMIT 1");
   const out = users.map((u) => {
     const trades = db.prepare("SELECT * FROM trades WHERE user_id = ?").all(u.id);
     const rows = trades.map((t) => rowFromTrade(t, getCmpForScript(t.script), u.ratio));
     const summary = summarize(rows, u.ratio);
-    return { ...u, summary };
+    return { ...u, taxApplicable: !!u.tax_applicable, settlement: latestSettlement.get(u.id) || null, summary };
   });
   res.json(out);
 });
 
 // Add a new investor account
 router.post("/investors", (req, res) => {
-  const { username, password, displayName, ratio, taxRate } = req.body || {};
+  const { username, password, displayName, ratio, taxRate, taxApplicable } = req.body || {};
   if (!username || !password || !displayName || ratio == null) {
     return res.status(400).json({ error: "username, password, displayName and ratio are required" });
   }
   const password_hash = bcrypt.hashSync(password, 12);
   const stmt = db.prepare(`
-    INSERT INTO users (username, password_hash, display_name, role, ratio, tax_rate, joined_on)
-    VALUES (?, ?, ?, 'investor', ?, ?, date('now'))
+    INSERT INTO users (username, password_hash, display_name, role, ratio, tax_rate, tax_applicable, joined_on)
+    VALUES (?, ?, ?, 'investor', ?, ?, ?, date('now'))
   `);
-  const info = stmt.run(username.trim().toLowerCase(), password_hash, displayName, ratio, taxRate || 0);
+  const info = stmt.run(username.trim().toLowerCase(), password_hash, displayName, ratio, taxRate || 0, taxApplicable === false ? 0 : 1);
   res.status(201).json({ id: info.lastInsertRowid });
 });
 
-// Edit an existing investor's details — name, profit-share ratio, username.
+// Edit an existing investor's details — name, profit-share ratio, username,
+// or whether tax is applicable to them at all.
 // Password is changed separately via /investors/:id/password.
 router.patch("/investors/:id", (req, res) => {
-  const { displayName, ratio, username } = req.body || {};
+  const { displayName, ratio, username, taxApplicable } = req.body || {};
   const existing = db.prepare("SELECT id FROM users WHERE id = ? AND role = 'investor'").get(req.params.id);
   if (!existing) return res.status(404).json({ error: "Investor not found" });
 
@@ -47,6 +49,7 @@ router.patch("/investors/:id", (req, res) => {
   if (displayName != null && displayName !== "") { fields.push("display_name = ?"); values.push(displayName); }
   if (ratio != null && ratio !== "") { fields.push("ratio = ?"); values.push(Number(ratio)); }
   if (username != null && username !== "") { fields.push("username = ?"); values.push(String(username).trim().toLowerCase()); }
+  if (typeof taxApplicable === "boolean") { fields.push("tax_applicable = ?"); values.push(taxApplicable ? 1 : 0); }
   if (!fields.length) return res.status(400).json({ error: "Nothing to update" });
 
   try {
@@ -176,6 +179,36 @@ router.get("/prices", (req, res) => {
 router.post("/prices/refresh", async (req, res) => {
   const result = await refreshAllPrices();
   res.json(result);
+});
+
+// List every settlement recorded for one investor (most recent first) —
+// used by the "Balance Settlement" admin screen.
+router.get("/settlements", (req, res) => {
+  const { userId } = req.query;
+  if (!userId) return res.status(400).json({ error: "userId query param is required" });
+  const rows = db.prepare("SELECT * FROM settlements WHERE user_id = ? ORDER BY settlement_date DESC, id DESC").all(userId);
+  res.json(rows);
+});
+
+// Record a settlement of balance between manager and investor (either
+// direction). Once an investor has one on file, their dashboard card swaps
+// from "Tax" to "Balance Settlement — Already Settled".
+router.post("/settlements", (req, res) => {
+  const { userId, settlementDate, amount, note } = req.body || {};
+  if (!userId || !settlementDate) return res.status(400).json({ error: "userId and settlementDate are required" });
+  const user = db.prepare("SELECT id FROM users WHERE id = ? AND role = 'investor'").get(userId);
+  if (!user) return res.status(404).json({ error: "Investor not found" });
+  const info = db.prepare(`
+    INSERT INTO settlements (user_id, settlement_date, amount, note) VALUES (?, ?, ?, ?)
+  `).run(userId, settlementDate, amount === "" || amount == null ? null : Number(amount), note || null);
+  res.status(201).json({ id: info.lastInsertRowid });
+});
+
+// Remove a settlement entry (e.g. it was logged in error).
+router.delete("/settlements/:id", (req, res) => {
+  const info = db.prepare("DELETE FROM settlements WHERE id = ?").run(req.params.id);
+  if (info.changes === 0) return res.status(404).json({ error: "Settlement not found" });
+  res.json({ ok: true });
 });
 
 export default router;

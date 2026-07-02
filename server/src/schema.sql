@@ -6,9 +6,23 @@ CREATE TABLE IF NOT EXISTS users (
   role TEXT NOT NULL CHECK (role IN ('admin','investor')),
   ratio REAL NOT NULL DEFAULT 0,       -- manager's cut of this investor's profit, e.g. 0.30 = 30%
   tax_rate REAL NOT NULL DEFAULT 0,    -- applied on the investor's net share at settlement, e.g. 0.10 = 10%
+  tax_applicable INTEGER NOT NULL DEFAULT 1,  -- 1 = show/compute tax for this investor, 0 = tax doesn't apply to them
   joined_on TEXT,
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+-- Records a settlement of balance between manager and investor (in either
+-- direction). Once an investor has at least one settlement on file, the
+-- dashboard's top card swaps from "Tax" to "Balance Settlement".
+CREATE TABLE IF NOT EXISTS settlements (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  settlement_date TEXT NOT NULL,
+  amount REAL,
+  note TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_settlements_user ON settlements(user_id);
 
 -- Maps a script/scrip name (as you refer to it) to the symbol the price feed understands.
 -- For NSE India stocks via Yahoo Finance, the symbol is usually TICKER.NS (e.g. TCS.NS).
