@@ -26,10 +26,10 @@ const admin = insertUser.run({
 });
 
 const investors = [
-  { username: "anuj", password: "Investor123!", display_name: "Anuj Mehta", ratio: 0.30, joined_on: "2025-11-01" },
-  { username: "anup", password: "Investor123!", display_name: "Anup Shah", ratio: 0.30, joined_on: "2025-11-01" },
-  { username: "amit", password: "Investor123!", display_name: "Amit Kapoor", ratio: 0.40, joined_on: "2025-12-01" },
-  { username: "porus", password: "Investor123!", display_name: "Porus Wadia", ratio: 0.40, joined_on: "2026-02-01" },
+  { username: "anuj", password: "Investor123!", display_name: "Anuj Kaklotar", ratio: 0.30, joined_on: "2025-11-01" },
+  { username: "anup", password: "Investor123!", display_name: "Anup Kaklotar", ratio: 0.30, joined_on: "2025-11-01" },
+  { username: "amit", password: "Investor123!", display_name: "Amit Bagaria", ratio: 0.50, joined_on: "2025-12-01" },
+  { username: "porus", password: "Investor123!", display_name: "Porus Vazifdar", ratio: 0.50, joined_on: "2026-02-01" },
 ];
 
 const investorIds = {};

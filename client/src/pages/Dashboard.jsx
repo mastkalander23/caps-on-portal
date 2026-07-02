@@ -6,6 +6,11 @@ import { Dropdown, StatCard, Avatar, initialsOf } from "../components/ui.jsx";
 import { api } from "../api.js";
 import AdminPanel from "./AdminPanel.jsx";
 
+function fmtDate(d) {
+  if (!d) return "—";
+  return new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+}
+
 /* A solid, high-contrast tooltip for the pie charts — recharts' default
    tooltip inherits ambient styles that end up low-contrast on a dark
    theme, so we render our own compact card instead. */
@@ -248,8 +253,12 @@ export default function Dashboard({ session, onLogout }) {
           <StatCard label="Realized P&L" value={fmtINR(realizedFigure)} tone={summary.realized >= 0 ? "up" : "down"} sub={`Gross: ${fmtINR(summary.realized)}`} />
           <StatCard label="Unrealized P&L" value={fmtINR(unrealizedFigure)} tone={summary.unrealized >= 0 ? "up" : "down"} sub={`Gross: ${fmtINR(summary.unrealized)}`} />
           {settlement ? (
-            <StatCard label="Balance Settlement" value="Already Settled"
-              sub={`Settled on ${new Date(settlement.settlement_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}${settlement.amount != null ? ` · ${fmtINR(settlement.amount)}` : ""}${settlement.note ? ` — ${settlement.note}` : ""}`} />
+            <StatCard label="Balance Settlement"
+              value={settlement.isSettled ? "Already Settled" : fmtINR(Math.abs(settlement.outstanding))}
+              tone={settlement.isSettled ? undefined : settlement.outstanding > 0 ? "down" : "up"}
+              sub={settlement.isSettled
+                ? `Manager's cut fully settled as of ${fmtDate(settlement.lastDate)}`
+                : `${settlement.outstanding > 0 ? "Still due from investor" : "Refund due to investor"} · Last settled ${fmtDate(settlement.lastDate)}`} />
           ) : taxApplicable ? (
             <StatCard label="Tax (LTCG 12.5% / STCG 20%)" value={fmtINR(totalTax)} sub={`Loss carry-fwd — STCL ${fmtINR(summary.carryForward.stcl)} · LTCL ${fmtINR(summary.carryForward.ltcl)}`} />
           ) : (

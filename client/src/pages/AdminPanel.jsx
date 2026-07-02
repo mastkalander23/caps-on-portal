@@ -441,7 +441,7 @@ function BalanceSettlement({ investorsList, onChanged }) {
         userId: Number(userId), settlementDate: form.settlementDate,
         amount: form.amount === "" ? null : Number(form.amount), note: form.note || null,
       });
-      setStatus({ tone: "ok", msg: "Settlement recorded. This investor's dashboard now shows Balance Settlement — Already Settled." });
+      setStatus({ tone: "ok", msg: "Settlement recorded." });
       setForm({ settlementDate: "", amount: "", note: "" });
       loadFor(userId);
       onChanged();
@@ -461,12 +461,26 @@ function BalanceSettlement({ investorsList, onChanged }) {
     }
   }
 
+  const selectedInvestor = investorsList.find((i) => String(i.id) === String(userId));
+  const managerCut = selectedInvestor?.summary?.managerRealized || 0;
+  const totalSettled = settlements.reduce((s, r) => s + (r.amount || 0), 0);
+  const outstanding = managerCut - totalSettled;
+
   return (
-    <Section icon={HandCoins} title="Balance Settlement" subtitle="Record when a balance has been settled between you and an investor. Once one is on file, their dashboard swaps the Tax card for a Balance Settlement card.">
+    <Section icon={HandCoins} title="Balance Settlement" subtitle="Balance Settlement = manager's cut of realized profit minus what's already been settled. Once an investor has any entry on file, their dashboard swaps the Tax card for this.">
       <div style={{ marginBottom: 16 }}>
         <Dropdown label="Investor" value={userId} onChange={loadFor}
           options={[{ value: "", label: "Select investor…" }, ...investorsList.map((i) => ({ value: String(i.id), label: i.display_name }))]} />
       </div>
+
+      {userId && !loading && (
+        <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginBottom: 16, fontFamily: "'IBM Plex Mono', monospace", fontSize: 12 }}>
+          <div><span style={{ color: T.muted }}>Manager's cut (realized): </span><span style={{ color: T.bone }}>{fmtINR(managerCut)}</span></div>
+          <div><span style={{ color: T.muted }}>Already settled: </span><span style={{ color: T.bone }}>{fmtINR(totalSettled)}</span></div>
+          <div><span style={{ color: T.muted }}>Outstanding: </span><span style={{ color: Math.abs(outstanding) < 1 ? T.emerald : outstanding > 0 ? T.terracotta : T.emerald }}>{Math.abs(outstanding) < 1 ? "Fully settled" : fmtINR(Math.abs(outstanding)) + (outstanding > 0 ? " due from investor" : " refund owed to investor")}</span></div>
+        </div>
+      )}
+
 
       {userId && (
         <>

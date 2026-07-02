@@ -6,8 +6,27 @@ import { getCmpForScript } from "../services/priceFeed.js";
 
 const router = Router();
 
-function latestSettlementFor(userId) {
-  return db.prepare("SELECT settlement_date, amount, note FROM settlements WHERE user_id = ? ORDER BY settlement_date DESC, id DESC LIMIT 1").get(userId) || null;
+// All settlement rows for one investor, most recent first.
+function settlementsFor(userId) {
+  return db.prepare("SELECT settlement_date, amount, note FROM settlements WHERE user_id = ? ORDER BY settlement_date DESC, id DESC").all(userId);
+}
+
+// Balance Settlement = manager's cut (on realized profit — the only part
+// that's actually cash-settleable) minus whatever has already been settled
+// between the two parties. `settlements` must be sorted most-recent-first.
+function balanceSettlementFor(managerRealized, settlements) {
+  if (!settlements.length) return null;
+  const totalSettled = settlements.reduce((s, r) => s + (r.amount || 0), 0);
+  const outstanding = managerRealized - totalSettled;
+  return {
+    managerCut: managerRealized,
+    totalSettled,
+    outstanding,
+    isSettled: Math.abs(outstanding) < 1, // within a rupee — treat as fully settled
+    lastDate: settlements[0].settlement_date,
+    lastAmount: settlements[0].amount,
+    lastNote: settlements[0].note,
+  };
 }
 
 function loadInvestorData(userId) {
@@ -50,10 +69,14 @@ router.get("/", requireAuth, (req, res) => {
     const summary = sumSummaries(perInvestor);
     const scriptData = scriptBreakdown(rows, metric, view);
 
+    // Combine every investor's settlements into one pool so the top card can
+    // still swap to Balance Settlement when viewing everyone at once.
+    const allSettlements = perInvestor.flatMap((d) => settlementsFor(d.user.id).map((s) => ({ ...s, userId: d.user.id })))
+      .sort((a, b) => (a.settlement_date < b.settlement_date ? 1 : -1));
+    const settlement = balanceSettlementFor(summary.managerRealized, allSettlements);
+
     return res.json({
-      // "All investors" combines different tax/settlement statuses, so the
-      // tax card is shown as normal here rather than trying to merge them.
-      investor: { id: "all", name: "All Investors (combined)", ratio: null, taxApplicable: true, settlement: null },
+      investor: { id: "all", name: "All Investors (combined)", ratio: null, taxApplicable: true, settlement },
       rows, summary, scriptData,
     });
   }
@@ -63,12 +86,13 @@ router.get("/", requireAuth, (req, res) => {
 
   const summary = summarize(data.rows, data.user.ratio);
   const scriptData = scriptBreakdown(data.rows, metric, view);
+  const settlement = balanceSettlementFor(summary.managerRealized, settlementsFor(data.user.id));
 
   res.json({
     investor: {
       id: data.user.id, name: data.user.display_name, ratio: data.user.ratio,
       taxApplicable: !!data.user.tax_applicable,
-      settlement: latestSettlementFor(data.user.id),
+      settlement,
     },
     rows: data.rows,
     summary,
