@@ -94,6 +94,37 @@ router.patch("/trades/:id/close", (req, res) => {
   res.json({ ok: true });
 });
 
+// List every trade for one investor — used by the "Manage / Edit Trades"
+// admin screen so previously-uploaded data can be corrected.
+router.get("/trades", (req, res) => {
+  const { userId } = req.query;
+  if (!userId) return res.status(400).json({ error: "userId query param is required" });
+  const trades = db.prepare("SELECT * FROM trades WHERE user_id = ? ORDER BY buy_date DESC, id DESC").all(userId);
+  res.json(trades);
+});
+
+// Full edit of an existing trade (script, dates, qty, prices). Send null /
+// empty string for sellDate & sellPrice to re-open a previously closed trade.
+router.patch("/trades/:id", (req, res) => {
+  const { script, buyDate, qty, buyPrice, sellDate, sellPrice } = req.body || {};
+  if (!script || !qty || buyPrice == null) {
+    return res.status(400).json({ error: "script, qty and buyPrice are required" });
+  }
+  const info = db.prepare(`
+    UPDATE trades SET script = ?, buy_date = ?, qty = ?, buy_price = ?, sell_date = ?, sell_price = ?
+    WHERE id = ?
+  `).run(script.trim(), buyDate || null, qty, buyPrice, sellDate || null, sellPrice || null, req.params.id);
+  if (info.changes === 0) return res.status(404).json({ error: "Trade not found" });
+  res.json({ ok: true });
+});
+
+// Delete a trade entirely (e.g. it was uploaded in error)
+router.delete("/trades/:id", (req, res) => {
+  const info = db.prepare("DELETE FROM trades WHERE id = ?").run(req.params.id);
+  if (info.changes === 0) return res.status(404).json({ error: "Trade not found" });
+  res.json({ ok: true });
+});
+
 // Map a script name to a Yahoo Finance symbol (e.g. "ISWL" -> "ISWL.NS")
 router.post("/ticker-map", (req, res) => {
   const { script, yahooSymbol } = req.body || {};
