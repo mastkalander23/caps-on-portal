@@ -35,6 +35,39 @@ router.post("/investors", (req, res) => {
   res.status(201).json({ id: info.lastInsertRowid });
 });
 
+// Edit an existing investor's details — name, profit-share ratio, username.
+// Password is changed separately via /investors/:id/password.
+router.patch("/investors/:id", (req, res) => {
+  const { displayName, ratio, username } = req.body || {};
+  const existing = db.prepare("SELECT id FROM users WHERE id = ? AND role = 'investor'").get(req.params.id);
+  if (!existing) return res.status(404).json({ error: "Investor not found" });
+
+  const fields = [];
+  const values = [];
+  if (displayName != null && displayName !== "") { fields.push("display_name = ?"); values.push(displayName); }
+  if (ratio != null && ratio !== "") { fields.push("ratio = ?"); values.push(Number(ratio)); }
+  if (username != null && username !== "") { fields.push("username = ?"); values.push(String(username).trim().toLowerCase()); }
+  if (!fields.length) return res.status(400).json({ error: "Nothing to update" });
+
+  try {
+    db.prepare(`UPDATE users SET ${fields.join(", ")} WHERE id = ?`).run(...values, req.params.id);
+  } catch (err) {
+    if (String(err.message).includes("UNIQUE")) return res.status(409).json({ error: "That username is already taken" });
+    throw err;
+  }
+  res.json({ ok: true });
+});
+
+// Admin can reset any investor's password directly (e.g. they forgot it).
+router.post("/investors/:id/password", (req, res) => {
+  const { password } = req.body || {};
+  if (!password || password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
+  const info = db.prepare("UPDATE users SET password_hash = ? WHERE id = ? AND role = 'investor'")
+    .run(bcrypt.hashSync(password, 12), req.params.id);
+  if (info.changes === 0) return res.status(404).json({ error: "Investor not found" });
+  res.json({ ok: true });
+});
+
 // Add a trade (buy, or buy+sell if closing a position immediately)
 router.post("/trades", (req, res) => {
   const { userId, script, buyDate, qty, buyPrice, sellDate, sellPrice, notes } = req.body || {};

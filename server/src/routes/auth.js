@@ -38,4 +38,18 @@ router.get("/me", requireAuth, (req, res) => {
   res.json(req.user);
 });
 
+// Any signed-in user (investor or admin) can change their own password.
+router.post("/change-password", requireAuth, (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+  if (!currentPassword || !newPassword) return res.status(400).json({ error: "Current and new password are required" });
+  if (newPassword.length < 6) return res.status(400).json({ error: "New password must be at least 6 characters" });
+
+  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.id);
+  if (!user || !bcrypt.compareSync(currentPassword, user.password_hash)) {
+    return res.status(401).json({ error: "Current password is incorrect" });
+  }
+  db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(bcrypt.hashSync(newPassword, 12), user.id);
+  res.json({ ok: true });
+});
+
 export default router;

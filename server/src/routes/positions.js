@@ -6,31 +6,61 @@ import { getCmpForScript } from "../services/priceFeed.js";
 
 const router = Router();
 
-// Investors can only ever see their own userId. Admins may pass ?userId= to view anyone.
+function loadInvestorData(userId) {
+  const user = db.prepare("SELECT id, display_name, ratio FROM users WHERE id = ? AND role = 'investor'").get(userId);
+  if (!user) return null;
+  const trades = db.prepare("SELECT * FROM trades WHERE user_id = ? ORDER BY buy_date").all(userId);
+  const rows = trades.map((t) => ({ ...rowFromTrade(t, getCmpForScript(t.script), user.ratio), investorId: user.id, investorName: user.display_name }));
+  return { user, rows };
+}
+
+function sumSummaries(list) {
+  const keys = ["realized", "unrealized", "grossTotal", "invested", "currentValue", "managerRealized", "managerUnrealized",
+    "investorRealized", "investorUnrealized", "investorTotal", "taxRealized", "taxUnrealized",
+    "investorRealizedAfterTax", "investorUnrealizedAfterTax", "investorTotalAfterTax"];
+  const out = {};
+  for (const k of keys) out[k] = list.reduce((s, x) => s + (x.summary[k] || 0), 0);
+  out.taxByFY = [];   // per-investor FY breakdowns don't combine meaningfully across different ratios/holdings
+  out.carryForward = { stcl: list.reduce((s, x) => s + x.summary.carryForward.stcl, 0), ltcl: list.reduce((s, x) => s + x.summary.carryForward.ltcl, 0) };
+  return out;
+}
+
+// Investors can only ever see their own userId. Admins may pass ?userId=
+// to view anyone, or ?userId=all to see every investor combined.
 router.get("/", requireAuth, (req, res) => {
-  let targetUserId = req.user.id;
-
-  if (req.query.userId) {
-    if (req.user.role !== "admin") {
-      return res.status(403).json({ error: "You can only view your own positions" });
-    }
-    targetUserId = Number(req.query.userId);
-  }
-
-  const user = db.prepare("SELECT id, display_name, ratio, tax_rate FROM users WHERE id = ?").get(targetUserId);
-  if (!user) return res.status(404).json({ error: "Investor not found" });
-
-  const trades = db.prepare("SELECT * FROM trades WHERE user_id = ? ORDER BY buy_date").all(targetUserId);
-  const rows = trades.map((t) => rowFromTrade(t, getCmpForScript(t.script), user.ratio));
-  const summary = summarize(rows, user.ratio);
-
   const view = req.query.view === "gross" ? "gross" : "net";
   const metric = ["realized", "unrealized", "combined"].includes(req.query.metric) ? req.query.metric : "combined";
-  const scriptData = scriptBreakdown(rows, metric, user.ratio, view);
+
+  let targetUserId = req.user.id;
+  if (req.query.userId) {
+    if (req.user.role !== "admin") return res.status(403).json({ error: "You can only view your own positions" });
+    targetUserId = req.query.userId;
+  }
+
+  if (targetUserId === "all") {
+    const investors = db.prepare("SELECT id FROM users WHERE role = 'investor'").all();
+    const perInvestor = investors.map((i) => loadInvestorData(i.id)).filter(Boolean)
+      .map((d) => ({ ...d, summary: summarize(d.rows, d.user.ratio) }));
+
+    const rows = perInvestor.flatMap((d) => d.rows);
+    const summary = sumSummaries(perInvestor);
+    const scriptData = scriptBreakdown(rows, metric, view);
+
+    return res.json({
+      investor: { id: "all", name: "All Investors (combined)", ratio: null },
+      rows, summary, scriptData,
+    });
+  }
+
+  const data = loadInvestorData(Number(targetUserId));
+  if (!data) return res.status(404).json({ error: "Investor not found" });
+
+  const summary = summarize(data.rows, data.user.ratio);
+  const scriptData = scriptBreakdown(data.rows, metric, view);
 
   res.json({
-    investor: { id: user.id, name: user.display_name, ratio: user.ratio, taxRate: user.tax_rate },
-    rows,
+    investor: { id: data.user.id, name: data.user.display_name, ratio: data.user.ratio },
+    rows: data.rows,
     summary,
     scriptData,
   });
