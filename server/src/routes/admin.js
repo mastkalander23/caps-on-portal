@@ -190,17 +190,20 @@ router.get("/settlements", (req, res) => {
   res.json(rows);
 });
 
-// Record a settlement of balance between manager and investor (either
-// direction). Once an investor has one on file, their dashboard card swaps
-// from "Tax" to "Balance Settlement — Already Settled".
+// Record a settlement of balance between manager and investor. `direction`
+// is 'to_manager' (investor paid the manager) or 'to_investor' (manager
+// paid/refunded the investor).
 router.post("/settlements", (req, res) => {
-  const { userId, settlementDate, amount, note } = req.body || {};
+  const { userId, settlementDate, amount, direction, note } = req.body || {};
   if (!userId || !settlementDate) return res.status(400).json({ error: "userId and settlementDate are required" });
+  if (direction && !["to_manager", "to_investor"].includes(direction)) {
+    return res.status(400).json({ error: "direction must be 'to_manager' or 'to_investor'" });
+  }
   const user = db.prepare("SELECT id FROM users WHERE id = ? AND role = 'investor'").get(userId);
   if (!user) return res.status(404).json({ error: "Investor not found" });
   const info = db.prepare(`
-    INSERT INTO settlements (user_id, settlement_date, amount, note) VALUES (?, ?, ?, ?)
-  `).run(userId, settlementDate, amount === "" || amount == null ? null : Number(amount), note || null);
+    INSERT INTO settlements (user_id, settlement_date, amount, direction, note) VALUES (?, ?, ?, ?, ?)
+  `).run(userId, settlementDate, amount === "" || amount == null ? null : Math.abs(Number(amount)), direction || "to_manager", note || null);
   res.status(201).json({ id: info.lastInsertRowid });
 });
 

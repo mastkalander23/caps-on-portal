@@ -11,14 +11,16 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
--- Records a settlement of balance between manager and investor (in either
--- direction). Once an investor has at least one settlement on file, the
--- dashboard's top card swaps from "Tax" to "Balance Settlement".
+-- Records a settlement of balance between manager and investor. `direction`
+-- says which way the money moved: 'to_manager' (investor paid the manager,
+-- reduces what's outstanding) or 'to_investor' (manager paid/refunded the
+-- investor, increases what's outstanding).
 CREATE TABLE IF NOT EXISTS settlements (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   settlement_date TEXT NOT NULL,
   amount REAL,
+  direction TEXT NOT NULL DEFAULT 'to_manager' CHECK (direction IN ('to_manager', 'to_investor')),
   note TEXT,
   created_at TEXT DEFAULT (datetime('now'))
 );

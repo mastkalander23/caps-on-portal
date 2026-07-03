@@ -413,7 +413,7 @@ function BalanceSettlement({ investorsList, onChanged }) {
   const [userId, setUserId] = useState("");
   const [settlements, setSettlements] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({ settlementDate: "", amount: "", note: "" });
+  const [form, setForm] = useState({ settlementDate: "", amount: "", direction: "to_manager", note: "" });
   const [status, setStatus] = useState(null);
 
   const cellIn = { width: "100%", background: T.ink, border: `1px solid ${T.hairline}`, borderRadius: 5, padding: "6px 8px", color: T.bone, fontSize: 12.5, fontFamily: "'IBM Plex Mono', monospace" };
@@ -439,10 +439,10 @@ function BalanceSettlement({ investorsList, onChanged }) {
     try {
       await api.addSettlement({
         userId: Number(userId), settlementDate: form.settlementDate,
-        amount: form.amount === "" ? null : Number(form.amount), note: form.note || null,
+        amount: form.amount === "" ? null : Number(form.amount), direction: form.direction, note: form.note || null,
       });
       setStatus({ tone: "ok", msg: "Settlement recorded." });
-      setForm({ settlementDate: "", amount: "", note: "" });
+      setForm({ settlementDate: "", amount: "", direction: "to_manager", note: "" });
       loadFor(userId);
       onChanged();
     } catch (err) {
@@ -463,11 +463,11 @@ function BalanceSettlement({ investorsList, onChanged }) {
 
   const selectedInvestor = investorsList.find((i) => String(i.id) === String(userId));
   const managerCut = selectedInvestor?.summary?.managerRealized || 0;
-  const totalSettled = settlements.reduce((s, r) => s + (r.amount || 0), 0);
+  const totalSettled = settlements.reduce((s, r) => s + (r.direction === "to_investor" ? -(r.amount || 0) : (r.amount || 0)), 0);
   const outstanding = managerCut - totalSettled;
 
   return (
-    <Section icon={HandCoins} title="Balance Settlement" subtitle="Balance Settlement = manager's cut of realized profit minus what's already been settled. Once an investor has any entry on file, their dashboard swaps the Tax card for this.">
+    <Section icon={HandCoins} title="Balance Settlement" subtitle="Balance Settlement = manager's cut of realized profit minus what's already been settled (payments in either direction add up). This is always shown on the investor's dashboard in place of a tax card.">
       <div style={{ marginBottom: 16 }}>
         <Dropdown label="Investor" value={userId} onChange={loadFor}
           options={[{ value: "", label: "Select investor…" }, ...investorsList.map((i) => ({ value: String(i.id), label: i.display_name }))]} />
@@ -476,19 +476,23 @@ function BalanceSettlement({ investorsList, onChanged }) {
       {userId && !loading && (
         <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginBottom: 16, fontFamily: "'IBM Plex Mono', monospace", fontSize: 12 }}>
           <div><span style={{ color: T.muted }}>Manager's cut (realized): </span><span style={{ color: T.bone }}>{fmtINR(managerCut)}</span></div>
-          <div><span style={{ color: T.muted }}>Already settled: </span><span style={{ color: T.bone }}>{fmtINR(totalSettled)}</span></div>
+          <div><span style={{ color: T.muted }}>Already settled (net): </span><span style={{ color: T.bone }}>{fmtINR(totalSettled)}</span></div>
           <div><span style={{ color: T.muted }}>Outstanding: </span><span style={{ color: Math.abs(outstanding) < 1 ? T.emerald : outstanding > 0 ? T.terracotta : T.emerald }}>{Math.abs(outstanding) < 1 ? "Fully settled" : fmtINR(Math.abs(outstanding)) + (outstanding > 0 ? " due from investor" : " refund owed to investor")}</span></div>
         </div>
       )}
 
-
       {userId && (
         <>
-          <form onSubmit={submit} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 12, alignItems: "end", marginBottom: 16 }}>
+          <form onSubmit={submit} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr auto", gap: 12, alignItems: "end", marginBottom: 16 }}>
             <Field label="Settlement date" required type="date" value={form.settlementDate} onChange={(e) => setForm({ ...form, settlementDate: e.target.value })} />
-            <Field label="Amount (optional)" type="number" step="any" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="e.g. 125000" />
+            <Field label="Amount" required type="number" min="0" step="any" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="e.g. 10000" />
+            <Dropdown label="Direction" value={form.direction} onChange={(v) => setForm({ ...form, direction: v })}
+              options={[
+                { value: "to_manager", label: "Paid to manager" },
+                { value: "to_investor", label: "Received from manager" },
+              ]} />
             <Field label="Note (optional)" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="e.g. Paid via NEFT" />
-            <button type="submit" disabled={!form.settlementDate} style={{ background: T.gold, border: "none", borderRadius: 8, padding: "10px 18px", color: "#20180a", fontWeight: 600, fontSize: 13, cursor: form.settlementDate ? "pointer" : "not-allowed", opacity: form.settlementDate ? 1 : 0.5, height: 37 }}>Record settlement</button>
+            <button type="submit" disabled={!form.settlementDate || form.amount === ""} style={{ background: T.gold, border: "none", borderRadius: 8, padding: "10px 18px", color: "#20180a", fontWeight: 600, fontSize: 13, cursor: (form.settlementDate && form.amount !== "") ? "pointer" : "not-allowed", opacity: (form.settlementDate && form.amount !== "") ? 1 : 0.5, height: 37 }}>Record</button>
           </form>
 
           {loading ? (
@@ -498,7 +502,7 @@ function BalanceSettlement({ investorsList, onChanged }) {
               <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "'IBM Plex Mono', monospace", fontSize: 12 }}>
                 <thead>
                   <tr style={{ color: T.muted, background: T.panel2 }}>
-                    {["Date", "Amount", "Note", ""].map((h) => (
+                    {["Date", "Direction", "Amount", "Note", ""].map((h) => (
                       <th key={h} style={{ textAlign: "left", padding: "7px 8px", borderBottom: `1px solid ${T.hairline}`, fontWeight: 500, whiteSpace: "nowrap" }}>{h}</th>
                     ))}
                   </tr>
@@ -507,6 +511,7 @@ function BalanceSettlement({ investorsList, onChanged }) {
                   {settlements.map((s) => (
                     <tr key={s.id} style={{ borderBottom: `1px solid ${T.hairline}` }}>
                       <td style={{ padding: "8px", color: T.bone }}>{s.settlement_date}</td>
+                      <td style={{ padding: "8px", color: s.direction === "to_investor" ? T.terracotta : T.emerald }}>{s.direction === "to_investor" ? "Investor received" : "Paid to manager"}</td>
                       <td style={{ padding: "8px", color: T.boneDim }}>{s.amount != null ? fmtINR(s.amount) : "—"}</td>
                       <td style={{ padding: "8px", color: T.boneDim }}>{s.note || "—"}</td>
                       <td style={{ padding: "8px" }}>
@@ -515,7 +520,7 @@ function BalanceSettlement({ investorsList, onChanged }) {
                     </tr>
                   ))}
                   {settlements.length === 0 && (
-                    <tr><td colSpan={4} style={{ padding: 18, textAlign: "center", color: T.muted }}>No settlements recorded for this investor yet.</td></tr>
+                    <tr><td colSpan={5} style={{ padding: 18, textAlign: "center", color: T.muted }}>No settlements recorded for this investor yet.</td></tr>
                   )}
                 </tbody>
               </table>

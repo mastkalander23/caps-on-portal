@@ -8,24 +8,33 @@ const router = Router();
 
 // All settlement rows for one investor, most recent first.
 function settlementsFor(userId) {
-  return db.prepare("SELECT settlement_date, amount, note FROM settlements WHERE user_id = ? ORDER BY settlement_date DESC, id DESC").all(userId);
+  return db.prepare("SELECT settlement_date, amount, direction, note FROM settlements WHERE user_id = ? ORDER BY settlement_date DESC, id DESC").all(userId);
 }
 
 // Balance Settlement = manager's cut (on realized profit — the only part
 // that's actually cash-settleable) minus whatever has already been settled
-// between the two parties. `settlements` must be sorted most-recent-first.
+// between the two parties. Each settlement counts towards or against that
+// cut depending on which way the money moved:
+//   'to_manager'  — investor paid the manager  → reduces outstanding
+//   'to_investor' — manager paid/refunded the investor → increases outstanding
+// `settlements` must be sorted most-recent-first. Always returns a value
+// (even with zero settlements on file) so the card can be shown unconditionally.
 function balanceSettlementFor(managerRealized, settlements) {
-  if (!settlements.length) return null;
-  const totalSettled = settlements.reduce((s, r) => s + (r.amount || 0), 0);
+  const totalSettled = settlements.reduce((s, r) => {
+    const amt = r.amount || 0;
+    return s + (r.direction === "to_investor" ? -amt : amt);
+  }, 0);
   const outstanding = managerRealized - totalSettled;
   return {
     managerCut: managerRealized,
     totalSettled,
     outstanding,
     isSettled: Math.abs(outstanding) < 1, // within a rupee — treat as fully settled
-    lastDate: settlements[0].settlement_date,
-    lastAmount: settlements[0].amount,
-    lastNote: settlements[0].note,
+    hasEntries: settlements.length > 0,
+    lastDate: settlements.length ? settlements[0].settlement_date : null,
+    lastAmount: settlements.length ? settlements[0].amount : null,
+    lastDirection: settlements.length ? settlements[0].direction : null,
+    lastNote: settlements.length ? settlements[0].note : null,
   };
 }
 

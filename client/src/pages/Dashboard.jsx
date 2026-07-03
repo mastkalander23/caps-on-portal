@@ -212,7 +212,6 @@ export default function Dashboard({ session, onLogout }) {
   const netTotal = view === "gross" ? summary.grossTotal : view === "afterTax" ? summary.investorTotalAfterTax : summary.investorTotal;
   const realizedFigure = view === "gross" ? summary.realized : view === "afterTax" ? summary.investorRealizedAfterTax : summary.investorRealized;
   const unrealizedFigure = view === "gross" ? summary.unrealized : view === "afterTax" ? summary.investorUnrealizedAfterTax : summary.investorUnrealized;
-  const totalTax = summary.taxRealized + summary.taxUnrealized;
   const settlement = investor.settlement;
   const taxApplicable = investor.taxApplicable !== false;
 
@@ -252,18 +251,14 @@ export default function Dashboard({ session, onLogout }) {
             sub={view === "gross" ? "Pre-share, pre-tax" : view === "afterTax" ? "Your share, after tax" : "Your share, pre-tax"} />
           <StatCard label="Realized P&L" value={fmtINR(realizedFigure)} tone={summary.realized >= 0 ? "up" : "down"} sub={`Gross: ${fmtINR(summary.realized)}`} />
           <StatCard label="Unrealized P&L" value={fmtINR(unrealizedFigure)} tone={summary.unrealized >= 0 ? "up" : "down"} sub={`Gross: ${fmtINR(summary.unrealized)}`} />
-          {settlement ? (
-            <StatCard label="Balance Settlement"
-              value={settlement.isSettled ? "Already Settled" : fmtINR(Math.abs(settlement.outstanding))}
-              tone={settlement.isSettled ? undefined : settlement.outstanding > 0 ? "down" : "up"}
-              sub={settlement.isSettled
+          <StatCard label="Balance Settlement"
+            value={settlement.isSettled ? "Already Settled" : fmtINR(Math.abs(settlement.outstanding))}
+            tone={settlement.isSettled ? undefined : settlement.outstanding > 0 ? "down" : "up"}
+            sub={!settlement.hasEntries
+              ? `${fmtINR(settlement.managerCut)} manager's cut · no settlements recorded yet`
+              : settlement.isSettled
                 ? `Manager's cut fully settled as of ${fmtDate(settlement.lastDate)}`
                 : `${settlement.outstanding > 0 ? "Still due from investor" : "Refund due to investor"} · Last settled ${fmtDate(settlement.lastDate)}`} />
-          ) : taxApplicable ? (
-            <StatCard label="Tax (LTCG 12.5% / STCG 20%)" value={fmtINR(totalTax)} sub={`Loss carry-fwd — STCL ${fmtINR(summary.carryForward.stcl)} · LTCL ${fmtINR(summary.carryForward.ltcl)}`} />
-          ) : (
-            <StatCard label="Tax" value="Not Applicable" sub="Tax does not apply to this investor" />
-          )}
         </div>
 
         <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginBottom: 26 }}>
@@ -360,7 +355,7 @@ export default function Dashboard({ session, onLogout }) {
             </table>
           </div>
 
-          {!settlement && taxApplicable && summary.taxByFY && summary.taxByFY.length > 0 && (
+          {taxApplicable && summary.taxByFY && summary.taxByFY.length > 0 && (
             <div style={{ marginTop: 20, paddingTop: 16, borderTop: `1px solid ${T.hairline}` }}>
               <div style={{ fontSize: 12, color: T.muted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 10, fontFamily: "'IBM Plex Mono', monospace" }}>Tax by Financial Year (realized only, after loss set-off)</div>
               <div style={{ overflowX: "auto" }}>
@@ -393,7 +388,7 @@ export default function Dashboard({ session, onLogout }) {
             </div>
           )}
 
-          {!settlement && taxApplicable && (
+          {taxApplicable && (
             <div style={{ color: T.muted, fontSize: 11, marginTop: 12 }}>
               Realized tax nets short/long-term gains and losses within each financial year, with unabsorbed losses carried forward. Unrealized tax is a live projection — what the open book would add or save in tax if closed today — and only locks in once a position is actually sold.
             </div>

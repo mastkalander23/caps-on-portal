@@ -20,3 +20,10 @@ const userColumns = db.prepare("PRAGMA table_info(users)").all().map((c) => c.na
 if (!userColumns.includes("tax_applicable")) {
   db.exec("ALTER TABLE users ADD COLUMN tax_applicable INTEGER NOT NULL DEFAULT 1");
 }
+
+// Same idea for `settlements.direction`, added after the table itself
+// first shipped.
+const settlementColumns = db.prepare("PRAGMA table_info(settlements)").all().map((c) => c.name);
+if (!settlementColumns.includes("direction")) {
+  db.exec("ALTER TABLE settlements ADD COLUMN direction TEXT NOT NULL DEFAULT 'to_manager'");
+}
