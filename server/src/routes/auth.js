@@ -1,7 +1,7 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import rateLimit from "express-rate-limit";
-import { db } from "../db.js";
+import { get, run } from "../db.js";
 import { signToken, setAuthCookie, requireAuth } from "../auth.js";
 
 const router = Router();
@@ -14,11 +14,11 @@ const loginLimiter = rateLimit({
   message: { error: "Too many login attempts. Please try again later." },
 });
 
-router.post("/login", loginLimiter, (req, res) => {
+router.post("/login", loginLimiter, async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: "Username and password are required" });
 
-  const user = db.prepare("SELECT * FROM users WHERE username = ?").get(username.trim().toLowerCase());
+  const user = await get("SELECT * FROM users WHERE username = ?", [username.trim().toLowerCase()]);
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
     return res.status(401).json({ error: "Incorrect username or password" });
   }
@@ -39,16 +39,16 @@ router.get("/me", requireAuth, (req, res) => {
 });
 
 // Any signed-in user (investor or admin) can change their own password.
-router.post("/change-password", requireAuth, (req, res) => {
+router.post("/change-password", requireAuth, async (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
   if (!currentPassword || !newPassword) return res.status(400).json({ error: "Current and new password are required" });
   if (newPassword.length < 6) return res.status(400).json({ error: "New password must be at least 6 characters" });
 
-  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.id);
+  const user = await get("SELECT * FROM users WHERE id = ?", [req.user.id]);
   if (!user || !bcrypt.compareSync(currentPassword, user.password_hash)) {
     return res.status(401).json({ error: "Current password is incorrect" });
   }
-  db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(bcrypt.hashSync(newPassword, 12), user.id);
+  await run("UPDATE users SET password_hash = ? WHERE id = ?", [bcrypt.hashSync(newPassword, 12), user.id]);
   res.json({ ok: true });
 });
 

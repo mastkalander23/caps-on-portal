@@ -1,20 +1,31 @@
 // Populates the database with starter accounts and sample trades so you can
 // see the app working end to end. Run once with: npm run seed
 // Re-running is safe — it clears and re-inserts seed data only.
+//
+// WARNING: this wipes users/trades/settlements/ticker_map. Do NOT run this
+// against your live Turso database once it has real investor data in it —
+// only use it against a fresh/demo database.
 
 import bcrypt from "bcryptjs";
-import { db } from "./db.js";
+import { run } from "./db.js";
 
 const hash = (pw) => bcrypt.hashSync(pw, 12);
 
-db.exec("DELETE FROM trades; DELETE FROM settlements; DELETE FROM users; DELETE FROM ticker_map;");
+await run("DELETE FROM trades");
+await run("DELETE FROM settlements");
+await run("DELETE FROM users");
+await run("DELETE FROM ticker_map");
 
-const insertUser = db.prepare(`
-  INSERT INTO users (username, password_hash, display_name, role, ratio, tax_rate, tax_applicable, joined_on)
-  VALUES (@username, @password_hash, @display_name, @role, @ratio, @tax_rate, @tax_applicable, @joined_on)
-`);
+async function insertUser(u) {
+  const info = await run(
+    `INSERT INTO users (username, password_hash, display_name, role, ratio, tax_rate, tax_applicable, joined_on)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [u.username, u.password_hash, u.display_name, u.role, u.ratio, u.tax_rate, u.tax_applicable, u.joined_on]
+  );
+  return info.lastInsertRowid;
+}
 
-const admin = insertUser.run({
+await insertUser({
   username: "admin",
   password_hash: hash("ChangeMe123!"),
   display_name: "Fund Manager",
@@ -34,7 +45,7 @@ const investors = [
 
 const investorIds = {};
 for (const inv of investors) {
-  const info = insertUser.run({
+  investorIds[inv.username] = await insertUser({
     username: inv.username,
     password_hash: hash(inv.password),
     display_name: inv.display_name,
@@ -44,13 +55,15 @@ for (const inv of investors) {
     tax_applicable: 1,
     joined_on: inv.joined_on,
   });
-  investorIds[inv.username] = info.lastInsertRowid;
 }
 
-const insertTrade = db.prepare(`
-  INSERT INTO trades (user_id, script, buy_date, qty, buy_price, sell_date, sell_price)
-  VALUES (@user_id, @script, @buy_date, @qty, @buy_price, @sell_date, @sell_price)
-`);
+async function insertTrade(t) {
+  await run(
+    `INSERT INTO trades (user_id, script, buy_date, qty, buy_price, sell_date, sell_price)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [t.user_id, t.script, t.buy_date, t.qty, t.buy_price, t.sell_date, t.sell_price]
+  );
+}
 
 const trades = [
   // Anuj — open
@@ -85,7 +98,7 @@ const trades = [
 ];
 
 for (const t of trades) {
-  insertTrade.run({
+  await insertTrade({
     user_id: investorIds[t.u],
     script: t.script,
     buy_date: t.buy_date,
@@ -105,8 +118,9 @@ const tickerMap = [
   { script: "SW Solar", yahoo_symbol: "SWSOLAR.NS" },
   { script: "DBL", yahoo_symbol: "DBL.NS" },
 ];
-const insertMap = db.prepare("INSERT INTO ticker_map (script, yahoo_symbol) VALUES (?, ?)");
-for (const m of tickerMap) insertMap.run(m.script, m.yahoo_symbol);
+for (const m of tickerMap) {
+  await run("INSERT INTO ticker_map (script, yahoo_symbol) VALUES (?, ?)", [m.script, m.yahoo_symbol]);
+}
 
 console.log("Seed complete.");
 console.log("Admin login:    admin / ChangeMe123!");

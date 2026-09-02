@@ -1,14 +1,17 @@
 import { Router } from "express";
-import { db } from "../db.js";
+import { get, all } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { rowFromTrade, summarize, scriptBreakdown } from "../services/pnl.js";
-import { getCmpForScript } from "../services/priceFeed.js";
+import { getCmpMap } from "../services/priceFeed.js";
 
 const router = Router();
 
 // All settlement rows for one investor, most recent first.
-function settlementsFor(userId) {
-  return db.prepare("SELECT settlement_date, amount, direction, note FROM settlements WHERE user_id = ? ORDER BY settlement_date DESC, id DESC").all(userId);
+async function settlementsFor(userId) {
+  return all(
+    "SELECT settlement_date, amount, direction, note FROM settlements WHERE user_id = ? ORDER BY settlement_date DESC, id DESC",
+    [userId]
+  );
 }
 
 // Balance Settlement = manager's cut (on realized profit — the only part
@@ -38,11 +41,11 @@ function balanceSettlementFor(managerRealized, settlements) {
   };
 }
 
-function loadInvestorData(userId) {
-  const user = db.prepare("SELECT id, display_name, ratio, tax_applicable FROM users WHERE id = ? AND role = 'investor'").get(userId);
+async function loadInvestorData(userId, cmpMap) {
+  const user = await get("SELECT id, display_name, ratio, tax_applicable FROM users WHERE id = ? AND role = 'investor'", [userId]);
   if (!user) return null;
-  const trades = db.prepare("SELECT * FROM trades WHERE user_id = ? ORDER BY buy_date").all(userId);
-  const rows = trades.map((t) => ({ ...rowFromTrade(t, getCmpForScript(t.script), user.ratio), investorId: user.id, investorName: user.display_name }));
+  const trades = await all("SELECT * FROM trades WHERE user_id = ? ORDER BY buy_date", [userId]);
+  const rows = trades.map((t) => ({ ...rowFromTrade(t, cmpMap[t.script] ?? null, user.ratio), investorId: user.id, investorName: user.display_name }));
   return { user, rows };
 }
 
@@ -59,7 +62,7 @@ function sumSummaries(list) {
 
 // Investors can only ever see their own userId. Admins may pass ?userId=
 // to view anyone, or ?userId=all to see every investor combined.
-router.get("/", requireAuth, (req, res) => {
+router.get("/", requireAuth, async (req, res) => {
   const view = req.query.view === "gross" ? "gross" : "net";
   const metric = ["realized", "unrealized", "combined"].includes(req.query.metric) ? req.query.metric : "combined";
 
@@ -69,9 +72,12 @@ router.get("/", requireAuth, (req, res) => {
     targetUserId = req.query.userId;
   }
 
+  const cmpMap = await getCmpMap();
+
   if (targetUserId === "all") {
-    const investors = db.prepare("SELECT id FROM users WHERE role = 'investor'").all();
-    const perInvestor = investors.map((i) => loadInvestorData(i.id)).filter(Boolean)
+    const investors = await all("SELECT id FROM users WHERE role = 'investor'");
+    const perInvestorRaw = await Promise.all(investors.map((i) => loadInvestorData(i.id, cmpMap)));
+    const perInvestor = perInvestorRaw.filter(Boolean)
       .map((d) => ({ ...d, summary: summarize(d.rows, d.user.ratio) }));
 
     const rows = perInvestor.flatMap((d) => d.rows);
@@ -80,7 +86,10 @@ router.get("/", requireAuth, (req, res) => {
 
     // Combine every investor's settlements into one pool so the top card can
     // still swap to Balance Settlement when viewing everyone at once.
-    const allSettlements = perInvestor.flatMap((d) => settlementsFor(d.user.id).map((s) => ({ ...s, userId: d.user.id })))
+    const settlementsPerInvestor = await Promise.all(
+      perInvestor.map((d) => settlementsFor(d.user.id).then((rows) => rows.map((s) => ({ ...s, userId: d.user.id }))))
+    );
+    const allSettlements = settlementsPerInvestor.flat()
       .sort((a, b) => (a.settlement_date < b.settlement_date ? 1 : -1));
     const settlement = balanceSettlementFor(summary.managerRealized, allSettlements);
 
@@ -90,12 +99,12 @@ router.get("/", requireAuth, (req, res) => {
     });
   }
 
-  const data = loadInvestorData(Number(targetUserId));
+  const data = await loadInvestorData(Number(targetUserId), cmpMap);
   if (!data) return res.status(404).json({ error: "Investor not found" });
 
   const summary = summarize(data.rows, data.user.ratio);
   const scriptData = scriptBreakdown(data.rows, metric, view);
-  const settlement = balanceSettlementFor(summary.managerRealized, settlementsFor(data.user.id));
+  const settlement = balanceSettlementFor(summary.managerRealized, await settlementsFor(data.user.id));
 
   res.json({
     investor: {
