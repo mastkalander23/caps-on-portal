@@ -2,7 +2,7 @@ import { Router } from "express";
 import { get, all } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { rowFromTrade, summarize, scriptBreakdown } from "../services/pnl.js";
-import { getCmpMap } from "../services/priceFeed.js";
+import { getCmpMap, refreshAllPrices } from "../services/priceFeed.js";
 
 const router = Router();
 
@@ -78,7 +78,7 @@ router.get("/", requireAuth, async (req, res) => {
     const investors = await all("SELECT id FROM users WHERE role = 'investor'");
     const perInvestorRaw = await Promise.all(investors.map((i) => loadInvestorData(i.id, cmpMap)));
     const perInvestor = perInvestorRaw.filter(Boolean)
-      .map((d) => ({ ...d, summary: summarize(d.rows, d.user.ratio) }));
+      .map((d) => ({ ...d, summary: summarize(d.rows, d.user.ratio, !!d.user.tax_applicable) }));
 
     const rows = perInvestor.flatMap((d) => d.rows);
     const summary = sumSummaries(perInvestor);
@@ -102,7 +102,7 @@ router.get("/", requireAuth, async (req, res) => {
   const data = await loadInvestorData(Number(targetUserId), cmpMap);
   if (!data) return res.status(404).json({ error: "Investor not found" });
 
-  const summary = summarize(data.rows, data.user.ratio);
+  const summary = summarize(data.rows, data.user.ratio, !!data.user.tax_applicable);
   const scriptData = scriptBreakdown(data.rows, metric, view);
   const settlement = balanceSettlementFor(summary.managerRealized, await settlementsFor(data.user.id));
 
@@ -116,6 +116,13 @@ router.get("/", requireAuth, async (req, res) => {
     summary,
     scriptData,
   });
+});
+
+// Any signed-in user (investor or admin) can trigger a price refresh — it
+// only updates the shared market-price cache, not anyone's private data.
+router.post("/prices/refresh", requireAuth, async (req, res) => {
+  const result = await refreshAllPrices();
+  res.json(result);
 });
 
 export default router;

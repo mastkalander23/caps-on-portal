@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import { get, all, run, runBatch } from "../db.js";
 import { requireAuth, requireAdmin } from "../auth.js";
 import { rowFromTrade, summarize } from "../services/pnl.js";
-import { getCmpMap, refreshAllPrices, getAllCachedPrices } from "../services/priceFeed.js";
+import { getCmpMap, getAllCachedPrices } from "../services/priceFeed.js";
 
 const router = Router();
 router.use(requireAuth, requireAdmin);
@@ -16,7 +16,7 @@ router.get("/investors", async (req, res) => {
     users.map(async (u) => {
       const trades = await all("SELECT * FROM trades WHERE user_id = ?", [u.id]);
       const rows = trades.map((t) => rowFromTrade(t, cmpMap[t.script] ?? null, u.ratio));
-      const summary = summarize(rows, u.ratio);
+      const summary = summarize(rows, u.ratio, !!u.tax_applicable);
       const latestSettlement = await get(
         "SELECT settlement_date, amount, note FROM settlements WHERE user_id = ? ORDER BY settlement_date DESC, id DESC LIMIT 1",
         [u.id]
@@ -189,11 +189,6 @@ router.post("/ticker-map", async (req, res) => {
 
 router.get("/prices", async (req, res) => {
   res.json(await getAllCachedPrices());
-});
-
-router.post("/prices/refresh", async (req, res) => {
-  const result = await refreshAllPrices();
-  res.json(result);
 });
 
 // List every settlement recorded for one investor (most recent first) —

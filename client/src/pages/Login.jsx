@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Lock, ShieldCheck } from "lucide-react";
 import { T } from "../theme.js";
 import { api } from "../api.js";
+import { CoinMark } from "../components/CoinMark.jsx";
 
 export default function Login({ onLogin }) {
   const [username, setUsername] = useState("");
@@ -27,6 +28,7 @@ export default function Login({ onLogin }) {
     <div style={{ minHeight: "100vh", background: `radial-gradient(ellipse at top, #171a20 0%, ${T.ink} 60%)`, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, fontFamily: "Inter, sans-serif" }}>
       <div style={{ width: "100%", maxWidth: 400 }}>
         <div style={{ textAlign: "center", marginBottom: 34 }}>
+          <div style={{ marginBottom: 10 }}><CoinMark size={36} /></div>
           <div style={{ fontFamily: "'Fraunces', serif", fontSize: 34, color: T.bone, letterSpacing: "0.02em" }}>Caps ON^</div>
           <div style={{ width: 46, height: 1, background: T.gold, margin: "10px auto" }} />
           <div style={{ color: T.muted, fontSize: 13 }}>A private ledger, kept in confidence.</div>

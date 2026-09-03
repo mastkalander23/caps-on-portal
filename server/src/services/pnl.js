@@ -119,7 +119,7 @@ export function computeTaxEngine(rows) {
   };
 }
 
-export function summarize(rows, ratio) {
+export function summarize(rows, ratio, taxApplicable = true) {
   const closed = rows.filter((r) => r.status === "closed");
   const open = rows.filter((r) => r.status === "open");
 
@@ -130,21 +130,33 @@ export function summarize(rows, ratio) {
   const investorRealized = realized * (1 - ratio);
   const investorUnrealized = unrealized * (1 - ratio);
 
-  // Tax on realized trades: net gains/losses across financial years, with
-  // carry-forward, using only what's actually been sold.
-  const realizedTax = computeTaxEngine(closed.map((r) => ({ ...r, fyDate: r.sellDate })));
+  // Tax is the investor's own capital-gains liability — they own the
+  // underlying shares — so it's calculated on the FULL realized/projected
+  // profit (100%), not just the investor's post-split share. Skipped
+  // entirely for investors this doesn't apply to.
+  const today = new Date().toISOString().slice(0, 10);
+  const realizedTax = taxApplicable
+    ? computeTaxEngine(closed.map((r) => ({ ...r, fyDate: r.sellDate, investorShare: r.profit })))
+    : { totalTax: 0, byFY: [], carryForward: { stcl: 0, ltcl: 0 } };
 
   // Tax on the book INCLUDING today's open positions, as if everything were
   // sold today — the difference from realizedTax.totalTax is what the open
   // book currently adds (or saves, if it's carrying losses) in tax terms.
-  const today = new Date().toISOString().slice(0, 10);
-  const projectedTax = computeTaxEngine([
-    ...closed.map((r) => ({ ...r, fyDate: r.sellDate })),
-    ...open.map((r) => ({ ...r, fyDate: today })),
-  ]);
+  const projectedTax = taxApplicable
+    ? computeTaxEngine([
+        ...closed.map((r) => ({ ...r, fyDate: r.sellDate, investorShare: r.profit })),
+        ...open.map((r) => ({ ...r, fyDate: today, investorShare: r.profit })),
+      ])
+    : { totalTax: 0 };
 
   const taxRealized = realizedTax.totalTax;
   const taxUnrealized = projectedTax.totalTax - realizedTax.totalTax; // marginal effect of the open book
+
+  // Tax comes off the top of the FULL profit first — your (manager's) cut
+  // and the investor's take-home are both split from what's left over,
+  // not from the gross pre-tax profit.
+  const postTaxRealized = realized - taxRealized;
+  const postTaxUnrealized = unrealized - taxUnrealized;
 
   return {
     realized,
@@ -152,16 +164,16 @@ export function summarize(rows, ratio) {
     grossTotal: realized + unrealized,
     invested,
     currentValue,
-    managerRealized: realized * ratio,
-    managerUnrealized: unrealized * ratio,
+    managerRealized: postTaxRealized * ratio,
+    managerUnrealized: postTaxUnrealized * ratio,
     investorRealized,
     investorUnrealized,
     investorTotal: investorRealized + investorUnrealized,
     taxRealized,
     taxUnrealized,
-    investorRealizedAfterTax: investorRealized - taxRealized,
-    investorUnrealizedAfterTax: investorUnrealized - taxUnrealized,
-    investorTotalAfterTax: (investorRealized - taxRealized) + (investorUnrealized - taxUnrealized),
+    investorRealizedAfterTax: postTaxRealized * (1 - ratio),
+    investorUnrealizedAfterTax: postTaxUnrealized * (1 - ratio),
+    investorTotalAfterTax: (postTaxRealized * (1 - ratio)) + (postTaxUnrealized * (1 - ratio)),
     taxByFY: realizedTax.byFY,                 // locked-in, FY-wise breakdown
     carryForward: realizedTax.carryForward,    // real, currently-available carry-forward losses
   };

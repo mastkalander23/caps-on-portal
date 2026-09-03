@@ -42,7 +42,7 @@ export const api = {
     return request(`/positions${qs ? `?${qs}` : ""}`);
   },
   adminInvestors: () => request("/admin/investors"),
-  refreshPrices: () => request("/admin/prices/refresh", { method: "POST" }),
+  refreshPrices: () => request("/positions/prices/refresh", { method: "POST" }),
   addInvestor: (payload) => request("/admin/investors", { method: "POST", body: JSON.stringify(payload) }),
   addTrade: (payload) => request("/admin/trades", { method: "POST", body: JSON.stringify(payload) }),
   bulkImportTrades: (rows) => request("/admin/trades/bulk", { method: "POST", body: JSON.stringify({ rows }) }),

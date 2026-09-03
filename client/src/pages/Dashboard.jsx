@@ -3,12 +3,38 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { LogOut, RefreshCw, Settings, LayoutDashboard, ChevronDown, KeyRound, X } from "lucide-react";
 import { T, SCRIPT_COLORS, fmtINR, fmtNum } from "../theme.js";
 import { Dropdown, StatCard, Avatar, initialsOf } from "../components/ui.jsx";
+import { CoinMark } from "../components/CoinMark.jsx";
+import FarewellModal from "../components/FarewellModal.jsx";
 import { api } from "../api.js";
 import AdminPanel from "./AdminPanel.jsx";
 
 function fmtDate(d) {
   if (!d) return "—";
   return new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function timeAgo(date) {
+  if (!date) return null;
+  const seconds = Math.max(0, Math.round((Date.now() - date.getTime()) / 1000));
+  if (seconds < 10) return "just now";
+  if (seconds < 60) return `${seconds}s ago`;
+  const mins = Math.round(seconds / 60);
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.round(mins / 60);
+  return `${hrs}h ago`;
+}
+
+// Ticks its own re-render every 20s so "3 min ago" keeps advancing without
+// needing a fresh fetch.
+function LastUpdated({ date, refreshing }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 20000);
+    return () => clearInterval(id);
+  }, []);
+  if (refreshing) return <span style={{ color: T.gold }}>refreshing…</span>;
+  if (!date) return null;
+  return <span>prices updated {timeAgo(date)}</span>;
 }
 
 /* A solid, high-contrast tooltip for the pie charts — recharts' default
@@ -96,6 +122,8 @@ export default function Dashboard({ session, onLogout }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [showPwModal, setShowPwModal] = useState(false);
 
@@ -110,17 +138,19 @@ export default function Dashboard({ session, onLogout }) {
   }, [isAdmin, refreshKey]);
 
   const load = useCallback(() => {
-    if (!viewingId && !isAdmin) return;
+    if (!viewingId && !isAdmin) return Promise.resolve();
     const params = { view: view === "afterTax" ? "net" : view, metric: scriptMetric };
     if (isAdmin && viewingId) params.userId = viewingId;
-    api.positions(params).then(setData).catch((e) => setError(e.message));
+    return api.positions(params)
+      .then((d) => { setData(d); setLastUpdated(new Date()); })
+      .catch((e) => setError(e.message));
   }, [viewingId, view, scriptMetric, isAdmin]);
 
   useEffect(() => { if (viewingId || !isAdmin) load(); }, [load, viewingId, isAdmin, refreshKey]);
 
   async function refreshPrices() {
     setRefreshing(true);
-    try { await api.refreshPrices(); load(); } catch (e) { setError(e.message); }
+    try { await api.refreshPrices(); await load(); } catch (e) { setError(e.message); }
     finally { setRefreshing(false); }
   }
 
@@ -131,16 +161,24 @@ export default function Dashboard({ session, onLogout }) {
   const headerBar = (
     <div style={{ borderBottom: `1px solid ${T.hairline}`, padding: "16px 28px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 14 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 21 }}>Caps ON^</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+          <CoinMark size={22} />
+          <div style={{ fontFamily: "'Fraunces', serif", fontSize: 21 }}>Caps ON^</div>
+        </div>
         <div style={{ width: 1, height: 20, background: T.hairline }} />
         {tab === "portfolio" && (
-          <button onClick={refreshPrices} disabled={refreshing} style={{
-            display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: T.emerald, background: "none",
-            border: "none", cursor: "pointer", fontFamily: "'IBM Plex Mono', monospace",
-          }}>
-            <RefreshCw size={12} className={refreshing ? "spin" : ""} />
-            {refreshing ? "REFRESHING…" : "REFRESH PRICES (DELAYED FEED)"}
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <button onClick={refreshPrices} disabled={refreshing} style={{
+              display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: T.emerald, background: "none",
+              border: "none", cursor: "pointer", fontFamily: "'IBM Plex Mono', monospace",
+            }}>
+              <RefreshCw size={12} className={refreshing ? "spin" : ""} />
+              {refreshing ? "REFRESHING…" : "REFRESH PRICES (DELAYED FEED)"}
+            </button>
+            <div style={{ fontSize: 10.5, color: T.muted, fontFamily: "'IBM Plex Mono', monospace" }}>
+              <LastUpdated date={lastUpdated} refreshing={refreshing} />
+            </div>
+          </div>
         )}
         {isAdmin && (
           <div style={{ display: "flex", gap: 4, background: T.panel2, border: `1px solid ${T.hairline}`, borderRadius: 8, padding: 3 }}>
@@ -185,7 +223,7 @@ export default function Dashboard({ session, onLogout }) {
             </>
           )}
         </div>
-        <button onClick={async () => { await api.logout(); onLogout(); }} style={{ background: "none", border: `1px solid ${T.hairline}`, borderRadius: 7, padding: "7px 10px", color: T.muted, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+        <button onClick={() => setLoggingOut(true)} style={{ background: "none", border: `1px solid ${T.hairline}`, borderRadius: 7, padding: "7px 10px", color: T.muted, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
           <LogOut size={13} /> Log out
         </button>
       </div>
@@ -205,7 +243,12 @@ export default function Dashboard({ session, onLogout }) {
   }
 
   if (error) return <div style={{ color: T.terracotta, padding: 40, fontFamily: "Inter" }}>{error}{pwModal}</div>;
-  if (!data) return <div style={{ color: T.muted, padding: 40, fontFamily: "Inter" }}>Loading…{pwModal}</div>;
+  if (!data) return (
+    <div style={{ minHeight: "100vh", background: T.ink, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div className="rupee-pulse" style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 32, color: T.gold, opacity: 0.7 }}>₹</div>
+      {pwModal}
+    </div>
+  );
 
   const { investor, rows, summary, scriptData } = data;
   const isAll = investor.id === "all";
@@ -247,12 +290,14 @@ export default function Dashboard({ session, onLogout }) {
         </div>
 
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 26 }}>
-          <StatCard label="Net Position" value={fmtINR(netTotal)} tone={netTotal >= 0 ? "up" : "down"}
+          <StatCard label="Net Position" numeric={netTotal} loading={refreshing} tone={netTotal >= 0 ? "up" : "down"}
             sub={view === "gross" ? "Pre-share, pre-tax" : view === "afterTax" ? "Your share, after tax" : "Your share, pre-tax"} />
-          <StatCard label="Realized P&L" value={fmtINR(realizedFigure)} tone={summary.realized >= 0 ? "up" : "down"} sub={`Gross: ${fmtINR(summary.realized)}`} />
-          <StatCard label="Unrealized P&L" value={fmtINR(unrealizedFigure)} tone={summary.unrealized >= 0 ? "up" : "down"} sub={`Gross: ${fmtINR(summary.unrealized)}`} />
+          <StatCard label="Realized P&L" numeric={realizedFigure} loading={refreshing} tone={summary.realized >= 0 ? "up" : "down"} sub={`Gross: ${fmtINR(summary.realized)}`} />
+          <StatCard label="Unrealized P&L" numeric={unrealizedFigure} loading={refreshing} tone={summary.unrealized >= 0 ? "up" : "down"} sub={`Gross: ${fmtINR(summary.unrealized)}`} />
           <StatCard label="Balance Settlement"
-            value={settlement.isSettled ? "Already Settled" : fmtINR(Math.abs(settlement.outstanding))}
+            numeric={settlement.isSettled ? undefined : Math.abs(settlement.outstanding)}
+            value={settlement.isSettled ? "Already Settled" : undefined}
+            loading={refreshing}
             tone={settlement.isSettled ? undefined : settlement.outstanding > 0 ? "down" : "up"}
             sub={!settlement.hasEntries
               ? `${fmtINR(settlement.managerCut)} manager's cut · no settlements recorded yet`
@@ -397,7 +442,10 @@ export default function Dashboard({ session, onLogout }) {
       </div>
 
       {pwModal}
-      <style>{`.spin { animation: spin 1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      {loggingOut && (
+        <FarewellModal onDone={async () => { await api.logout(); onLogout(); }} />
+      )}
+      <style>{`.spin { animation: spin 1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } } .rupee-pulse { animation: rupeePulse 1.1s ease-in-out infinite; } @keyframes rupeePulse { 0%, 100% { opacity: 0.45; transform: scale(1); } 50% { opacity: 0.9; transform: scale(1.12); } }`}</style>
     </div>
   );
 }
